@@ -108,6 +108,8 @@ See [Edit the memories](memories.md#edit-the-memories).
 
 CALL is your callsign. The QSO and hunt screens use it, and the boot screen draws it. The default is N0CALL, a placeholder callsign.
 
+BKG # is your BKG.club member number. With one set, the boot screen shows `BKG.club #` and the number after your callsign; with NONE, the default, it shows nothing. Click the dial on BKG #, key the digits (up to four), and click again. F2 (DEL) deletes the last digit; deleting them all sets NONE.
+
 Click the dial on CALL, then key your callsign. Each character you key goes at the end. A callsign holds up to 10 characters: letters, digits and `/`. The device ignores other characters. Click again to end.
 
 | Control while you edit | Action |

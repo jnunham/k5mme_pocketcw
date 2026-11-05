@@ -49,10 +49,12 @@ enum Row {
     Every,
     AfterSend,
     Call,
+    /// The BKG.club number, keyed by digit.
+    Club,
 }
 
 /// Each row: its name, what it is, and the footer line that says what it does.
-const ROWS: [(&str, Row, &str); 41] = [
+const ROWS: [(&str, Row, &str); 42] = [
     ("KEYER", Row::Section(Section::Keyer), ""),
     ("MODE", Row::Value(Field::Mode), "IAMBIC A OR B, OR STRAIGHT/SIDESWIPER"),
     ("PADDLES", Row::Value(Field::Swap), "WHICH LEVER SENDS DITS"),
@@ -86,6 +88,7 @@ const ROWS: [(&str, Row, &str); 41] = [
     ("AFTER SEND", Row::AfterSend, "CLOSE OR KEEP THE MEM ROW OPEN"),
     ("CALLSIGN", Row::Section(Section::Callsign), ""),
     ("CALL", Row::Call, "FOR THE STATIONS AND THE BOOT SCREEN"),
+    ("BKG #", Row::Club, "YOUR BKG.CLUB NUMBER, ON THE BOOT SCREEN"),
     ("DEVICE", Row::Section(Section::Device), ""),
     ("USB OUT", Row::Value(Field::UsbOut), "WHAT THE USB PORT SENDS A COMPUTER"),
     ("DECODER BOARD", Row::Value(Field::DecoderBoard), "THE RADIO DECODER OF THE PRO MODEL"),
@@ -130,7 +133,7 @@ impl Ui {
 
     /// A memory or the callsign is taking what you key.
     pub(super) fn editing_text(&self) -> bool {
-        self.editing && matches!(ROWS[self.row].1, Row::Memory(_) | Row::Call)
+        self.editing && matches!(ROWS[self.row].1, Row::Memory(_) | Row::Call | Row::Club)
     }
 
     pub(super) fn draw_settings(&mut self, lcd: &mut Lcd, s: &Settings) {
@@ -193,6 +196,8 @@ impl Ui {
         let shown = match (editing, row) {
             (false, _) => Text::<20>::format(format_args!("{}", value.as_str())),
             (true, Row::Call) => Text::format(format_args!("{}_", value.as_str())),
+            (true, Row::Club) if s.bkg == 0 => Text::format(format_args!("#_")),
+            (true, Row::Club) => Text::format(format_args!("{}_", value.as_str())),
             (true, _) => Text::format(format_args!("< {} >", value.as_str())),
         };
         text_right(lcd, MAIN - 12, y + 2, shown.as_str(), value_fg, bg);
@@ -204,6 +209,8 @@ impl Ui {
             Row::Every => Text::format(format_args!("{} S", self.memories.every_s)),
             Row::AfterSend => Text::format(format_args!("{}", if self.memories.stay_open { "STAY OPEN" } else { "CLOSE" })),
             Row::Call => Text::format(format_args!("{}", s.callsign())),
+            Row::Club if s.bkg == 0 => Text::format(format_args!("NONE")),
+            Row::Club => Text::format(format_args!("#{}", s.bkg)),
             Row::Section(_) | Row::Memory(_) => Text::new(),
         }
     }
@@ -217,6 +224,7 @@ impl Ui {
                 Text::<40>::format(format_args!("{} LEFT  F2 DELETES  HOLD F3 CLEARS", LEN - self.memories.text(m).len()))
             }
             (true, Row::Call) => Text::format(format_args!("KEY IT  F2 DELETES  HOLD F3 CLEARS")),
+            (true, Row::Club) => Text::format(format_args!("KEY THE DIGITS  F2 DELETES")),
             _ => Text::format(format_args!("{about}")),
         };
         rect(lcd, 0, ABOUT_Y, MAIN, TINY_H, t.bg);
@@ -225,7 +233,7 @@ impl Ui {
 
     pub(super) fn settings_act(&mut self, lcd: &mut Lcd, s: &mut Settings, action: Action) {
         let row = ROWS[self.row].1;
-        let text_row = matches!(row, Row::Memory(_) | Row::Call);
+        let text_row = matches!(row, Row::Memory(_) | Row::Call | Row::Club);
         match action {
             Action::Soft(3) => {
                 self.editing = false;
@@ -234,6 +242,7 @@ impl Ui {
             Action::Soft(1) if self.editing && text_row => {
                 match row {
                     Row::Memory(m) => self.memories.pop(m),
+                    Row::Club => s.pop_bkg(),
                     _ => s.pop_callsign(),
                 }
                 self.draw_settings_row(lcd, s, self.row);
@@ -259,7 +268,7 @@ impl Ui {
                     self.memories.stay_open ^= delta % 2 != 0;
                     self.draw_settings_row(lcd, s, self.row);
                 }
-                Row::Section(_) | Row::Memory(_) | Row::Call => {}
+                Row::Section(_) | Row::Memory(_) | Row::Call | Row::Club => {}
             },
             Action::Turn(delta) => self.move_row(lcd, s, delta),
             _ => {}
@@ -322,6 +331,7 @@ impl Ui {
     pub(super) fn clear_text(&mut self, lcd: &mut Lcd, s: &mut Settings) {
         match ROWS[self.row].1 {
             Row::Memory(m) => self.memories.clear(m),
+            Row::Club => s.bkg = 0,
             _ => {
                 while !s.callsign().is_empty() {
                     s.pop_callsign();
@@ -348,6 +358,7 @@ impl Ui {
                 }
             }
             (Row::Call, Decoded::Char(c)) if s.push_callsign(c as char) => {}
+            (Row::Club, Decoded::Char(c)) if s.push_bkg(c as char) => {}
             _ => return,
         }
         self.draw_settings_row(lcd, s, self.row);

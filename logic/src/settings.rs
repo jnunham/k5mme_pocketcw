@@ -158,6 +158,8 @@ pub struct Settings {
     pub mania_level: u8,
     /// Each game's best score, in `GAMES` order.
     pub bests: [u16; GAMES.len()],
+    /// Your BKG.club member number, for the boot screen; 0 for none.
+    pub bkg: u16,
 }
 
 pub const MAX_VOLUME: u8 = volume::MAX_LEVEL;
@@ -223,6 +225,7 @@ impl Default for Settings {
             last_practice: None, head_rung: FIRST_RUNG, chars_set: CharSet::Letters,
             mania_level: mania::FIRST_LEVEL,
             bests: [0; GAMES.len()],
+            bkg: 0,
         }
     }
 }
@@ -255,7 +258,10 @@ const RUNG_AT: usize = PRACTICE_AT + 1;
 const CHARS_AT: usize = RUNG_AT + 1;
 const MANIA_AT: usize = CHARS_AT + 1;
 const BESTS_AT: usize = MANIA_AT + 1;
-pub const RECORD_LEN: usize = BESTS_AT + 2 * GAMES.len() + record::OVERHEAD;
+const BKG_AT: usize = BESTS_AT + 2 * GAMES.len();
+/// The largest BKG number: four digits.
+pub const MAX_BKG: u16 = 9999;
+pub const RECORD_LEN: usize = BKG_AT + 2 + record::OVERHEAD;
 /// Settings are kept in two copies and saved to them in turn, so a save cut off by power loss
 /// leaves the other copy whole. A save with count `n` goes to copy `n % COPIES`.
 pub const COPIES: usize = 2;
@@ -272,7 +278,7 @@ impl Settings {
     /// it once that exists), style, palette, callsign, receive speed, effective speed, QSO and
     /// ragchew flags, brightness, sound flags (bit 0 square), noise, fading, hardware flags, save
     /// count, NINJA words in hundreds, the F1 hold's index in `SHORTCUTS`, the last practice's
-    /// index in `PRACTICES` plus one, the HEAD rung, the CHARS set's index in `CHAR_SETS`, the MANIA level, each game's best (LE).
+    /// index in `PRACTICES` plus one, the HEAD rung, the CHARS set's index in `CHAR_SETS`, the MANIA level, each game's best (LE), the BKG number (LE).
     pub fn encode(&self, count: u8) -> [u8; RECORD_LEN] {
         let mode = match self.mode {
             Mode::IambicA => 0,
@@ -315,6 +321,7 @@ impl Settings {
         for (i, best) in self.bests.iter().enumerate() {
             body[BESTS_AT + 2 * i..BESTS_AT + 2 * i + 2].copy_from_slice(&best.to_le_bytes());
         }
+        body[BKG_AT..BKG_AT + 2].copy_from_slice(&self.bkg.to_le_bytes());
         frame(&mut record, MAGIC, VERSION);
         record
     }
@@ -405,6 +412,7 @@ impl Settings {
                 *best = u16::from_le_bytes([lo, hi]);
             }
         }
+        let bkg = body.get(BKG_AT..BKG_AT + 2).and_then(|b| b.first_chunk::<2>()).map_or(0, |&b| u16::from_le_bytes(b)).min(MAX_BKG);
         let chars_set = body.get(CHARS_AT).and_then(|&i| CHAR_SETS.get(i as usize)).copied().unwrap_or(defaults.chars_set);
         let hardware = if len >= BODY_LEN { body[V6_BODY] } else { defaults.decoder_board as u8 };
         let stored = hardware >> USB_OUT_SHIFT & USB_OUT_MASK;
@@ -453,6 +461,7 @@ impl Settings {
             chars_set,
             mania_level,
             bests,
+            bkg,
         };
         let in_range = (MIN_WPM..=MAX_WPM).contains(&settings.wpm)
             && settings.volume <= MAX_VOLUME
@@ -591,6 +600,22 @@ impl Settings {
     pub fn callsign(&self) -> &str {
         let len = self.callsign.iter().position(|&b| b == 0).unwrap_or(CALLSIGN_LEN);
         core::str::from_utf8(&self.callsign[..len]).unwrap_or("")
+    }
+
+    /// Appends a digit to the BKG number; false for anything else, or past four digits.
+    pub fn push_bkg(&mut self, c: char) -> bool {
+        let Some(digit) = c.to_digit(10) else { return false };
+        let next = self.bkg as u32 * 10 + digit;
+        if next > MAX_BKG as u32 || (self.bkg == 0 && digit == 0) {
+            return false;
+        }
+        self.bkg = next as u16;
+        true
+    }
+
+    /// Drops the BKG number's last digit; 0 means none.
+    pub fn pop_bkg(&mut self) {
+        self.bkg /= 10;
     }
 
     /// Appends a callsign character; false when it is not allowed or the call is full.
@@ -907,6 +932,29 @@ mod tests {
         frame(older, MAGIC, VERSION);
         assert_eq!(Settings::decode(&before), Some(Settings { bests: [0; GAMES.len()], ..s }));
         assert_eq!(GAMES[3].name(), "WORDLE");
+        const { assert!(RECORD_LEN <= 64) };
+    }
+
+    #[test]
+    fn bkg_number_is_keyed_by_digit_round_trips_and_defaults_to_none() {
+        let mut s = Settings::default();
+        assert_eq!(s.bkg, 0);
+        assert!(!s.push_bkg('0'), "no leading zero");
+        for c in "388".chars() {
+            assert!(s.push_bkg(c));
+        }
+        assert!(!s.push_bkg('K'));
+        assert_eq!(s.bkg, 388);
+        assert!(s.push_bkg('1'));
+        assert!(!s.push_bkg('2'), "four digits at most");
+        assert_eq!(Settings::decode(&s.encode(0)), Some(s));
+        s.pop_bkg();
+        assert_eq!(s.bkg, 388);
+        let mut before = [0xFF; 64];
+        let older = &mut before[..BKG_AT + record::OVERHEAD];
+        body_mut(older).copy_from_slice(&s.encode(0)[record::BODY_START..record::BODY_START + BKG_AT]);
+        frame(older, MAGIC, VERSION);
+        assert_eq!(Settings::decode(&before), Some(Settings { bkg: 0, ..s }), "a save from before it has none");
         const { assert!(RECORD_LEN <= 64) };
     }
 

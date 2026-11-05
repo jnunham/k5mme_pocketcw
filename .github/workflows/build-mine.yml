@@ -39,7 +39,11 @@ jobs:
         run: (cd logic && cargo test) 2>&1 | tee test.log
 
       - name: Build the firmware
-        run: sh tools/mkimage.sh 2>&1 | tee build.log
+        run: |
+          sh tools/mkimage.sh 2>&1 | tee build.log
+          # RAM is 64 KB, and the stack gets what .data and .bss leave.
+          size=$(dirname "$(ls ~/.rustup/toolchains/*/lib/rustlib/*/bin/llvm-size | head -1)")/llvm-size
+          "$size" -A firmware/target/thumbv7em-none-eabihf/release/pocketcw-firmware 2>&1 | tee -a build.log
 
       # The Mac install tool is unchanged from upstream, so the build takes its v0.4.0 copy and
       # needs no Mac runner.

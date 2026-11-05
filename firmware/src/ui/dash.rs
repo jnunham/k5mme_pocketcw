@@ -103,9 +103,9 @@ pub(super) struct View {
     /// The mountains' scroll when last drawn, and the top row of each column then.
     far: i32,
     tops: [i16; MAIN as usize],
-    /// The floor's moving line segments as last drawn, per row.
-    segments: [[(i16, u8); MAX_SEGMENTS]; FLOOR_ROWS],
-    counts: [u8; FLOOR_ROWS],
+    /// The floor's phase when last drawn. The line segments then follow from it, so they need
+    /// no table: the whole View stays a few hundred bytes, as RAM is 64 KB with the stack in it.
+    phase: i32,
 }
 
 impl View {
@@ -134,8 +134,7 @@ impl View {
             drawn: [None; SPRITES],
             far: -1,
             tops: [GROUND_Y as i16; MAIN as usize],
-            segments: [[(0, 0); MAX_SEGMENTS]; FLOOR_ROWS],
-            counts: [0; FLOOR_ROWS],
+            phase: 0,
         }
     }
 
@@ -177,9 +176,7 @@ impl View {
         if FLOOR_LINES.contains(&row) {
             return if (1..=8).contains(&row) { self.grid_far } else { self.grid };
         }
-        let r = row as usize;
-        let on = self.segments[r][..self.counts[r] as usize].iter().any(|&(s, l)| x >= s as i32 && x < s as i32 + l as i32);
-        if on { self.grid } else { self.ground }
+        if scene::on_line(x, row, self.phase) { self.grid } else { self.ground }
     }
 
     /// Sprite `s`'s pixel at (x, y), or None where it's clear.
@@ -241,9 +238,7 @@ impl View {
         let far = (d.scroll / 8) as i32;
         if full || self.far < 0 {
             self.set_tops(far);
-            for row in 0..FLOOR_ROWS {
-                (self.segments[row], self.counts[row]) = Self::row_segments(row, phase);
-            }
+            self.phase = phase;
             let all = Rect { x: 0, y: SCENE_TOP, w: MAIN, h: SCENE_BOTTOM - SCENE_TOP };
             self.draw(lcd, all, &sprites);
         } else {
@@ -277,10 +272,12 @@ impl View {
     /// Moves the floor's lines to `phase`: in each row whose lines moved, the old ones go and
     /// the new ones come.
     fn move_floor(&mut self, lcd: &mut Lcd, phase: i32) {
+        if phase == self.phase {
+            return;
+        }
         for row in FIRST_LINE_ROW as usize..FLOOR_ROWS {
             let (new, n) = Self::row_segments(row, phase);
-            let old = self.segments[row];
-            let m = self.counts[row];
+            let (old, m) = Self::row_segments(row, self.phase);
             let (new_used, old_used) = (&new[..n as usize], &old[..m as usize]);
             if new_used == old_used {
                 continue;
@@ -292,9 +289,8 @@ impl View {
             for &(s, l) in new_used.iter().filter(|seg| !old_used.contains(seg)) {
                 rect(lcd, s as i32, y, l as i32, 1, self.grid);
             }
-            self.segments[row] = new;
-            self.counts[row] = n;
         }
+        self.phase = phase;
     }
 }
 

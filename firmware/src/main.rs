@@ -11,7 +11,6 @@ use rtic_monotonics::systick::prelude::*;
 
 systick_monotonic!(Mono, 1_000);
 
-const TAGLINE: &str = "BKG.club #388";
 
 #[exception]
 unsafe fn HardFault(frame: &ExceptionFrame) -> ! {
@@ -84,7 +83,7 @@ mod app {
     use rtic::Mutex;
     use rtic_sync::channel::{Receiver, Sender};
 
-    use super::{Mono, TAGLINE};
+    use super::Mono;
 
     const EVENT_QUEUE: usize = 64;
 
@@ -907,7 +906,11 @@ mod app {
         let checks = boot_checks(&system, &settings);
         let theme = Theme::new(settings.style, settings.palette, settings.boot_count);
         let stripes = palette_stripes(settings.palette, settings.boot_count);
-        let tagline = Text::format(format_args!("v{} {} {TAGLINE}", env!("CARGO_PKG_VERSION"), settings.callsign()));
+        // The BKG.club number shows only once you set one in SETTINGS.
+        let tagline = match settings.bkg {
+            0 => Text::format(format_args!("v{} {}", env!("CARGO_PKG_VERSION"), settings.callsign())),
+            n => Text::format(format_args!("v{} {} BKG.club #{n}", env!("CARGO_PKG_VERSION"), settings.callsign())),
+        };
         let mut boot = Boot::new(settings.boot_count, &theme, stripes, settings.callsign(), tagline, checks);
         let start = Mono::now();
         loop {
