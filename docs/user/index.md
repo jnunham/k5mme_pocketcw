@@ -19,6 +19,7 @@ This manual tells you how to install PocketCW and how to use it.
 - [Timing](timing.md): a close look at your keying.
 - [Receive drills](receive.md): Koch, words, callsigns, and the content pack drills NINJA and HEAD.
 - [Ragchew](ragchew.md): copy a full QSO between two stations.
+- [Games](games.md): LADDER, INVADERS, SIMON, WORDLE and FIST.
 - [Activate a park or summit](activate.md): work a pileup of hunters.
 - [Hunt](hunt.md): work activators on parks and summits.
 - [Letters](letters.md): your accuracy for each character.

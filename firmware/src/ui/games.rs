@@ -263,9 +263,10 @@ impl Ui {
                 let _ = write!(sub, "BEST {best} PTS  RIGHT SPEEDS IT UP");
             }
             Engine::Invaders(g) => {
-                let _ = write!(info, "SCORE {}  LEVEL {}  LIVES ", g.score, g.level());
+                // At most 36 characters, to fit left of the keys.
+                let _ = write!(info, "SCORE {} LV {} LIVES ", g.score, g.level());
                 (0..INVADER_LIVES).for_each(|i| _ = info.push(if i < g.lives { b'*' } else { b'-' }));
-                let _ = write!(info, "  BEST {best}");
+                let _ = write!(info, " BEST {best}");
             }
             Engine::Simon(simon) => {
                 let _ = write!(info, "LENGTH {}  BEST {best}", simon.len());

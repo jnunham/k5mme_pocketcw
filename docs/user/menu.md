@@ -1,6 +1,6 @@
 # Menu
 
-The menu is a top list and three lists it opens: RECEIVE, ON AIR and STATS. Each row shows the name of a screen or a list. A `>` at the right end marks a row that opens a list. Under the rows, a line tells you what the selected row holds, and a dimmer line names the work the idea came from.
+The menu is a top list and four lists it opens: RECEIVE, ON AIR, GAMES and STATS. Each row shows the name of a screen or a list. A `>` at the right end marks a row that opens a list. Under the rows, a line tells you what the selected row holds, and a dimmer line names the work the idea came from.
 
 To open the menu, press F4 (MENU) on the KEYER screen. F4 (BACK) on any other screen opens the list that holds that screen, with its row selected. SETTINGS is the exception: BACK returns to the screen you opened it from.
 
@@ -13,8 +13,8 @@ To open the menu, press F4 (MENU) on the KEYER screen. F4 (BACK) on any other sc
 | RESUME | The practice you left, where you left it. After you turn the device on, it starts the last practice you opened again from the start. The right end names the practice. The row shows once you have opened a practice. | See below |
 | RECEIVE | The list of receive drills. | [Receive drills](receive.md) |
 | ON AIR | The list of on-air practice: activations, the hunt and ragchews. | See below |
-| TIMING | A zoomed timing tape and histograms of your keying. | [Timing](timing.md) |
-| STATS | The list of your statistics. | See below |
+| GAMES | The list of games. | [Games](games.md) |
+| STATS | Timing and the lists of your statistics. | See below |
 | SETTINGS | Every setting. | [Settings](settings.md) |
 | SYSTEM | Version, hardware checks and battery. | [System](system.md) |
 
@@ -49,10 +49,23 @@ See [Receive drills](receive.md).
 | QUIZ | A ragchew with a question about each over. | [Ragchew](ragchew.md) |
 | RADIO | What the decoder board of the Pro model hears, or what a computer sends as MIDI notes, decoded. This row shows only when DECODER BOARD is ON or USB OUT is not OFF. | [Radio](radio.md) |
 
+## GAMES
+
+| Row | Opens |
+| - | - |
+| LADDER | Callsigns that speed up as you copy them. The right end shows your best, such as `BEST 1240`. |
+| INVADERS | Characters fall; key them away. |
+| SIMON | A sequence that grows by one each time you key it back. |
+| WORDLE | Guess a five-letter word by keying it. |
+| FIST | Key words, scored on your timing. |
+
+See [Games](games.md).
+
 ## STATS
 
 | Row | Opens | Page |
 | - | - | - |
+| TIMING | A zoomed timing tape and histograms of your keying. | [Timing](timing.md) |
 | LETTERS | Your accuracy for each character, and your mixups. | [Letters](letters.md) |
 | PROGRESS | Practice time and totals for recent sessions. | [Progress](progress.md) |
 

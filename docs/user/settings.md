@@ -134,10 +134,10 @@ Click the dial on CALL, then key your callsign. Each character you key goes at t
 | Row | Values | Default | What it sets |
 | - | - | - | - |
 | STYLE | HAZARD, HUD, BLOCK, GRID, TERM | HAZARD | The shapes of the screen: the frame, the header, the button labels and the selection. |
-| PALETTE | 18 palettes | ORANGE | The colors of the screen and of the boot screen. |
+| PALETTE | 23 palettes | ORANGE | The colors of the screen and of the boot screen. |
 | BRIGHTNESS | 10 % to 100 %, in steps of 10 % | 100 % | The brightness of the screen. |
 
-The palettes are ORANGE, CYAN, AMBER, LIME, DAILY, the pride flags RAINBOW, TRANS, BI, LESBIAN, PAN, NONBIN, ACE, ARO, FLUID, AGENDER and QUEER, then SYNTHWAVE and PHOSPHOR.
+The palettes are ORANGE, CYAN, AMBER, LIME, DAILY, the pride flags RAINBOW, TRANS, BI, LESBIAN, PAN, NONBIN, ACE, ARO, FLUID, AGENDER and QUEER, then SYNTHWAVE, PHOSPHOR, NIGHT, DAYLIGHT, DMG, NIXIE and VAPOR. NIGHT is dim red on black, to keep your eyes dark-adapted; DAYLIGHT is dark on light, for the sun. The green, amber and red that grade timing and copy stay the same in every palette.
 
 GRID is a retrowave look: chrome titles over sunset lines, neon button outlines and a meter that warms from violet to yellow. TERM is a terminal look: a `>` prompt and cursor, dashed rules and reverse video selection. They go with any palette; GRID with SYNTHWAVE and TERM with PHOSPHOR are made for each other. DAILY shows a different flag each time you turn the device on. While you edit STYLE or PALETTE, the whole screen changes as you turn the dial.
 

@@ -4,7 +4,8 @@ This is PocketCW 0.4.0 with these additions:
 
 - **MANIA** (RECEIVE → MANIA): a listening game in the style of the Morse Mania app. Hear a character and pick it from the choices on F1–F4, or key it. Levels add characters in mirror pairs (A `.-` / N `-.`); 16 of 20 right opens the next level.
 - **CHARS** (RECEIVE → CHARS): one character at a time. Key it back, or press **F2 (HINT)** to see it and its dits and dahs. Choose what it sends in SETTINGS → RECEIVE → **CHARS SET**.
-- **Themes**: SETTINGS → THEME. **GRID** + **SYNTHWAVE** for retrowave, **TERM** + **PHOSPHOR** for a green-screen terminal.
+- **GAMES** (menu → GAMES): LADDER, INVADERS, SIMON, WORDLE and FIST. See the Games page of the manual.
+- **Themes**: SETTINGS → THEME. **GRID** + **SYNTHWAVE** for retrowave, **TERM** + **PHOSPHOR** for a green-screen terminal, and the palettes NIGHT, DAYLIGHT, DMG, NIXIE and VAPOR.
 
 ## Install (one command, no setup)
 
