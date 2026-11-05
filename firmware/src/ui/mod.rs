@@ -375,6 +375,7 @@ impl Ui {
                 self.tape.new_page();
                 self.draw(lcd, s);
             }
+            (1, Screen::Receive) => return self.mania_repeat(lcd, s),
             (2, Screen::Settings) if self.editing_text() => self.clear_text(lcd, s),
             (2, Screen::Home) if self.radio_available() => self.open(lcd, s, Screen::Radio),
             (3, screen) if screen != Screen::Home => self.open(lcd, s, Screen::Home),
@@ -449,6 +450,7 @@ impl Ui {
             (false, Screen::Home) => [f1, "", if self.radio_available() { "RADIO" } else { "" }, ""],
             (false, Screen::Letters | Screen::Timing) => [f1, "CLEAR", "", "HOME"],
             (false, Screen::Settings) if self.editing_text() => [f1, "", "CLEAR", "HOME"],
+            (false, Screen::Receive) if self.mania_question() => [f1, "AGAIN", "", "HOME"],
             (false, _) => [f1, "", "", "HOME"],
         };
         self.theme.softkeys(lcd, keys, holds);

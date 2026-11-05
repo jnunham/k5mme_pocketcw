@@ -51,7 +51,7 @@ The row of a hinted character shows the character and its code in amber, and `HI
 
 ## MANIA
 
-MANIA is a listening game in the spirit of the Morse Mania app. The device plays one character, and the F1 to F4 labels show up to four choices. Press the one you heard. You can also key the character instead, to practice sending; key `?` to hear it again.
+MANIA is a listening game in the spirit of the Morse Mania app. The device plays one character, and the F1 to F4 labels show up to four choices. Press the one you heard. You can also key the character instead, to practice sending. To hear it again, hold F2 (AGAIN) or key `?`. With no answer for 10 seconds, it plays again by itself, up to three times; then it waits as long as you like.
 
 - Right: the next character plays.
 - Wrong: the badge shows `WRONG`, the footer shows what it was and its code, such as `IT WAS Q  --.-`, and it plays again.

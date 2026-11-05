@@ -48,6 +48,10 @@ const THINK_MS: u32 = 1500;
 /// Pack words to try for one that fits a group.
 const PICK_TRIES: usize = 20;
 const NEXT_GROUP_MS: u32 = 900;
+/// MANIA: with no answer this long after a character ends, it plays again, up to
+/// `MANIA_REPEATS` times; then it waits for your answer as long as you like.
+const MANIA_REPEAT_MS: u32 = 10_000;
+const MANIA_REPEATS: u8 = 3;
 /// CHARS: time the hint stays up after its character plays again, before the next one.
 const HINT_HOLD_MS: u32 = 1500;
 const GROUP_DELAY_MS: u32 = 400;
@@ -100,6 +104,8 @@ pub(super) struct Receive {
     mania: Mania,
     /// MANIA: how the last round went, while `RoundOver` shows it.
     result: Option<mania::Result>,
+    /// MANIA: times the character playing now played again on its own.
+    repeats: u8,
 }
 
 impl Receive {
@@ -130,6 +136,7 @@ impl Receive {
             silent: None,
             mania: Mania::new(mania::FIRST_LEVEL, seed.rotate_left(16)),
             result: None,
+            repeats: 0,
         }
     }
 
@@ -334,7 +341,7 @@ impl Ui {
             Kind::Ninja => "LISTEN, OR KEY IT BACK  ? REPEATS",
             Kind::Head => "KEY IT BACK AFTER IT ENDS  ? REPEATS",
             Kind::Chars => "KEY IT BACK  F2 FOR A HINT",
-            Kind::Mania => "PICK F1-F4, OR KEY IT  ? REPEATS",
+            Kind::Mania => "PICK F1-F4, OR KEY IT  HOLD F2: AGAIN",
             _ => "KEY BACK WHAT YOU HEARD  ? REPEATS",
         };
         let foot = match rx.state {
@@ -357,6 +364,7 @@ impl Ui {
         let Some(Session::Receive(rx)) = &mut self.session else { return };
         if !again {
             rx.drill.set_chars(s.chars_set);
+            rx.repeats = 0;
             let pack = self.pack.as_ref().ok();
             let group = match (rx.drill.kind, rx.drill.item()) {
                 (Kind::Ninja, _) => pack.and_then(|pack| ninja_word(&mut rx.drill, pack, lcd, s.ninja_words)).map(|(word, group)| {
@@ -428,8 +436,12 @@ impl Ui {
         if rx.state == State::Playing {
             rx.state = State::Waiting;
             let wait = if rx.drill.kind == Kind::Ninja { THINK_MS } else { START_MS };
-            // MANIA waits for your answer as long as you like.
-            rx.deadline = (rx.drill.kind != Kind::Mania).then(|| now_ms.wrapping_add(wait));
+            let wait = match rx.drill.kind {
+                Kind::Mania if rx.repeats < MANIA_REPEATS => Some(MANIA_REPEAT_MS),
+                Kind::Mania => None,
+                _ => Some(wait),
+            };
+            rx.deadline = wait.map(|wait| now_ms.wrapping_add(wait));
             self.draw_receive_now(lcd);
         }
     }
@@ -501,6 +513,12 @@ impl Ui {
         }
         if !matches!(rx.state, State::Waiting | State::Copying) {
             return;
+        }
+        // MANIA: no answer yet, or keying that decoded to nothing: play it again.
+        if rx.drill.kind == Kind::Mania {
+            rx.repeats += 1;
+            self.stop_players();
+            return self.play_group(lcd, s, true);
         }
         if rx.copy.as_str().trim() == "?" {
             return self.play_group(lcd, s, true);
@@ -643,6 +661,22 @@ impl Ui {
         self.draw_receive_info(lcd);
         self.draw_receive_rows(lcd);
         self.draw_receive_now(lcd);
+    }
+
+    /// MANIA is waiting for an answer, so its F keys are choices.
+    pub(super) fn mania_question(&self) -> bool {
+        matches!(&self.session, Some(Session::Receive(rx))
+            if rx.drill.kind == Kind::Mania && matches!(rx.state, State::Playing | State::Waiting | State::Copying))
+    }
+
+    /// Holding F2 in MANIA plays the character again. True when it did.
+    pub(super) fn mania_repeat(&mut self, lcd: &mut Lcd, s: &Settings) -> bool {
+        if !self.mania_question() {
+            return false;
+        }
+        self.stop_players();
+        self.play_group(lcd, s, true);
+        true
     }
 
     /// MANIA: the next character, or the round's result once it has `ROUND` answers.
