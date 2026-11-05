@@ -429,8 +429,8 @@ impl Ui {
         }
         let foot = match (a.state, &a.engine) {
             (State::Paused, _) => "PAUSED: TOUCH THE KEY OR PRESS GO",
-            (State::Over, _) => "GO OR TOUCH THE KEY: PLAY AGAIN",
             (State::Over, Engine::Dash(..)) => "GO: RUN AGAIN  F2: SEE OR HEAR",
+            (State::Over, _) => "GO OR TOUCH THE KEY: PLAY AGAIN",
             (_, Engine::Dash(..)) if a.hear => "LISTEN, KEY IT TO JUMP  F2: AGAIN",
             (_, Engine::Dash(..)) => "KEY THE LETTER TO JUMP IT",
             (_, Engine::Ladder(_)) => "COPY THE CALL AND KEY IT BACK",

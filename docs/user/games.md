@@ -4,7 +4,20 @@ Open GAMES in the [menu](menu.md). Each game keeps your best score, even after y
 
 In every game, F1 (SET) opens the RECEIVE settings, F3 (STOP or GO) pauses the game or starts a new one once it ends, and F4 (BACK) returns to the menu. When a game ends, the footer says how it went and `NEW BEST!` when it was your best. Press F3 (GO) or key any character to play again.
 
-INVADERS and SIMON use the characters of CHARS SET, in the RECEIVE section of the [settings](settings.md#receive): A-Z unless you change it.
+DASH, INVADERS and SIMON use the characters of CHARS SET, in the RECEIVE section of the [settings](settings.md#receive): A-Z unless you change it.
+
+## DASH
+
+A side-scroller. Your robot runs across a sunset, mountains scrolling behind and a grid floor under it, and obstacles come at it: crates, rocks and antenna towers, each with a character in a bubble over it. Key the character and the robot jumps the obstacle, and its bubble turns green. If an obstacle reaches the robot first, it crashes into it: the bubble turns red, the robot blinks, and you lose one of three lives.
+
+Keys go to the nearest obstacle you haven't cleared. Each one you clear scores 10, plus a bonus the farther away it still is, and makes the run faster. The scene takes its colors from your PALETTE; it is made for SYNTHWAVE.
+
+There are two modes. Press F2 while the game is paused or over to switch:
+
+- SEE: the bubble shows the character.
+- HEAR: the bubble shows `?` and the device sends the character as the obstacle appears. The bubble shows the character once you clear it or crash. F2 (AGN) sends the next one again. Obstacles come farther apart, so you have time to listen.
+
+DASH uses letters and digits only; punctuation and prosigns from CHARS SET are left out.
 
 ## LADDER
 

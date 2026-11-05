@@ -53,7 +53,8 @@ See [Receive drills](receive.md).
 
 | Row | Opens |
 | - | - |
-| LADDER | Callsigns that speed up as you copy them. The right end shows your best, such as `BEST 1240`. |
+| DASH | A side-scroller: key the letter on each obstacle to jump it. The right end shows your best, such as `BEST 1240`. |
+| LADDER | Callsigns that speed up as you copy them. |
 | INVADERS | Characters fall; key them away. |
 | SIMON | A sequence that grows by one each time you key it back. |
 | WORDLE | Guess a five-letter word by keying it. |
