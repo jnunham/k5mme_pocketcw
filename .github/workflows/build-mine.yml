@@ -1,4 +1,4 @@
-# Builds this custom PocketCW on every push to main and publishes it as the newest release, so
+# Builds this custom PocketCW on Linux on every push to main and publishes it as the newest release, so
 # get-mine.sh can install it with no Rust on the Mac. The logs go to the build-log branch.
 name: build my firmware
 
@@ -23,7 +23,7 @@ defaults:
 
 jobs:
   build:
-    runs-on: macos-latest
+    runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
 
@@ -40,8 +40,10 @@ jobs:
       - name: Build the firmware
         run: sh tools/mkimage.sh 2>&1 | tee build.log
 
-      - name: Build the install tool
-        run: clang -O2 -arch arm64 -arch x86_64 -mmacosx-version-min=10.15 -o pocketcw-flash tools/pocketcw-flash.c -framework DiskArbitration -framework CoreFoundation 2>&1 | tee flash.log
+      # The Mac install tool is unchanged from upstream, so the build takes its v0.4.0 copy and
+      # needs no Mac runner.
+      - name: Get the install tool
+        run: curl -fsSL -o pocketcw-flash https://github.com/kvmet/k5mme_pocketcw/releases/download/v0.4.0/pocketcw-flash
 
       - name: Publish the release
         env:
