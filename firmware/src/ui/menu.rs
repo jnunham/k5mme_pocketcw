@@ -49,7 +49,7 @@ const fn row(name: &'static str, about: &'static str, credit: &'static str, item
 
 const TOP: [Row; 7] = [
     row("RESUME", "PICK UP WHERE YOU LEFT OFF", "", Item::Resume),
-    row("RECEIVE", "KOCH  WORDS  CALLS  NINJA  HEAD", "", Item::List(List::Receive)),
+    row("RECEIVE", "KOCH CHARS WORDS CALLS NINJA HEAD", "", Item::List(List::Receive)),
     row("ON AIR", "POTA  SOTA  HUNT  CHEW  QUIZ", "", Item::List(List::OnAir)),
     row("TIMING", "ZOOMED TAPE AND HISTOGRAMS", "", Item::Open(Screen::Timing)),
     row("STATS", "LETTER ACCURACY AND PROGRESS", "", Item::List(List::Stats)),
@@ -57,8 +57,9 @@ const TOP: [Row; 7] = [
     row("SYSTEM", "VERSION  HARDWARE CHECKS  BATTERY", "", Item::Open(Screen::System)),
 ];
 
-const RECEIVE: [Row; 5] = [
+const RECEIVE: [Row; 6] = [
     row("KOCH", "ONE MORE CHARACTER AT 90% RIGHT", "KOCH METHOD  LUDWIG KOCH", Item::Practice(Practice::Drill(Kind::Koch))),
+    row("CHARS", "ONE CHARACTER AT A TIME, WITH HINTS", "", Item::Practice(Practice::Drill(Kind::Chars))),
     row("WORDS", "COMMON WORDS TO COPY AND KEY BACK", "", Item::Practice(Practice::Drill(Kind::Words))),
     row("CALLS", "CALLSIGNS TO COPY AND KEY BACK", "", Item::Practice(Practice::Drill(Kind::Calls))),
     row("NINJA", "A WORD IN MORSE, THEN SPOKEN", "MORSE CODE NINJA  AD0WE", Item::Practice(Practice::Drill(Kind::Ninja))),
@@ -164,6 +165,7 @@ impl Ui {
             Item::List(_) => Text::format(format_args!(">")),
             Item::Practice(Practice::Drill(Kind::Koch)) => Text::format(format_args!("LEVEL {}", self.letters.level)),
             Item::Practice(Practice::Drill(Kind::Head)) => Text::format(format_args!("RUNG {}", s.head_rung)),
+            Item::Practice(Practice::Drill(Kind::Chars)) => Text::format(format_args!("{}", s.chars_set.name())),
             _ => Text::new(),
         }
     }

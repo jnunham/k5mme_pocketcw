@@ -52,7 +52,7 @@ enum Row {
 }
 
 /// Each row: its name, what it is, and the footer line that says what it does.
-const ROWS: [(&str, Row, &str); 40] = [
+const ROWS: [(&str, Row, &str); 41] = [
     ("KEYER", Row::Section(Section::Keyer), ""),
     ("MODE", Row::Value(Field::Mode), "IAMBIC A OR B, OR STRAIGHT/SIDESWIPER"),
     ("PADDLES", Row::Value(Field::Swap), "WHICH LEVER SENDS DITS"),
@@ -69,6 +69,7 @@ const ROWS: [(&str, Row, &str); 40] = [
     ("RECEIVE", Row::Section(Section::Receive), ""),
     ("CHAR SPEED", Row::Value(Field::RxSpeed), "DRILLS AND STATIONS  MATCH: YOURS"),
     ("FARNSWORTH", Row::Value(Field::RxEffective), "LOWER IT FOR LONGER GAPS"),
+    ("CHARS SET", Row::Value(Field::CharsSet), "WHAT THE CHARS DRILL SENDS"),
     ("DRILLS", Row::Section(Section::Drills), ""),
     ("CHEW SHOWS", Row::Value(Field::Reveal), "WHEN A RAGCHEW'S TEXT SHOWS"),
     ("NINJA WORDS", Row::Value(Field::NinjaWords), "NINJA PICKS FROM THIS MANY WORDS"),
@@ -397,6 +398,7 @@ pub(super) fn value(s: &Settings, field: Field) -> Text<{ config::SHOWN_LEN }> {
         Field::Wave => write!(t, "{}", if s.square { "SQUARE" } else { "SINE" }),
         Field::DecoderBoard => write!(t, "{}", on_off(s.decoder_board)),
         Field::NinjaWords => write!(t, "{}", s.ninja_words),
+        Field::CharsSet => write!(t, "{}", s.chars_set.name()),
         Field::UsbOut => write!(
             t,
             "{}",

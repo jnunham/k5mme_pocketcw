@@ -7,6 +7,7 @@ To start, open RECEIVE in the [menu](menu.md), then the drill. The header shows 
 | Drill | What the device sends |
 | - | - |
 | KOCH | Groups of 5 characters from the Koch characters of your level. |
+| CHARS | One character from the CHARS SET, with a hint on F2. See [CHARS](#chars). |
 | WORDS | One common word or abbreviation heard on the air, such as `QTH`, `5NN` or `<BK>`. |
 | CALLS | One US callsign. |
 | NINJA | One word from the content pack, then the voice says it. See [NINJA](#ninja). |
@@ -38,6 +39,14 @@ To hear the group again, key `?` alone as your copy.
 - In HEAD, each item takes two rows: what was sent, then your marked copy under it. The list shows the last 3 items.
 - Your copy as you key it, with the state at the right: `LISTEN`, `YOUR TURN`, `KEYING` or `PAUSED`.
 - The footer: your score for this session, such as `SESSION 85%  120 CHARS`. Before your first score, and while you wait to key, it says what to do. While the drill is paused, it says how to go on.
+
+## CHARS
+
+CHARS sends one character at a time. Key back what you heard. If you don't know it, press F2 (HINT): the device shows the character and its code, such as `Q  --.-`, and plays it again. A hint counts as missed, so the character comes up more often until you know it.
+
+CHARS SET in the RECEIVE section of the [settings](settings.md#receive) sets what it sends: A-Z, A-Z 0-9, ALL, or the characters of your Koch level. F1 (SET) opens that section. The drill picks characters you copy badly more often, as KOCH does. CHARS does not change your Koch level.
+
+The row of a hinted character shows the character and its code in amber, and `HINT 0/1` at the right.
 
 ## NINJA
 
@@ -94,6 +103,7 @@ The device keeps your level and your progress toward the next level while you us
 | - | - |
 | F1 (SET) | Pauses the drill and opens the settings at the RECEIVE section, or at DRILLS from NINJA. F4 (BACK) there returns, and the next group plays at the new settings. |
 | F2 (AGN) | While a group plays or waits for your copy: sends the group again, and clears your copy. Blank while the drill is paused. |
+| F2 (HINT) | CHARS only, in place of AGN: shows the character and its code, plays it again, and counts it as missed. To hear it again without a hint, key `?`. |
 | F3 (STOP or GO) | Pauses the drill, or starts it again. While the drill is paused, a character you key also starts it again. |
 | F4 (BACK) | Pauses the drill and opens the RECEIVE list of the [menu](menu.md). Click the drill or RESUME there to go on. |
 | Dial turn | Changes the focused header value. See [Header values](controls.md#header-values). |

@@ -17,7 +17,7 @@ pub const SHOWN_LEN: usize = 12;
 pub const REASON_LEN: usize = 160;
 
 /// Each setting's name: its settings row, with `_` for a space.
-const SETTINGS: [(&str, Field); 24] = [
+const SETTINGS: [(&str, Field); 25] = [
     ("MODE", Field::Mode),
     ("PADDLES", Field::Swap),
     ("SPEED", Field::Speed),
@@ -34,6 +34,7 @@ const SETTINGS: [(&str, Field); 24] = [
     ("FARNSWORTH", Field::RxEffective),
     ("CHEW_SHOWS", Field::Reveal),
     ("NINJA_WORDS", Field::NinjaWords),
+    ("CHARS_SET", Field::CharsSet),
     ("DECODER_BOARD", Field::DecoderBoard),
     ("PILEUP", Field::Pileup),
     ("FIST", Field::Fist),

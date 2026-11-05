@@ -5,7 +5,7 @@ use embedded_graphics::pixelcolor::{Rgb565, RgbColor};
 use pocketcw_logic::settings::{PALETTE_COUNT, STYLE_COUNT};
 use pocketcw_logic::timing::Quality;
 
-use crate::gfx::{self, CHAR_W, TINY_W, ink, mix, para, rect, rgb, text, tiny};
+use crate::gfx::{self, CHAR_W, TINY_H, TINY_W, ink, mix, para, rect, rgb, text, tiny};
 use crate::lcd::{HEIGHT, Lcd, WIDTH};
 
 /// Width of the main area; the soft key column fills the rest, under the header.
@@ -80,9 +80,19 @@ pub enum Style {
     Hazard,
     Hud,
     Block,
+    /// Retrowave: chrome titles over sunset lines, neon outlines, a sunset meter.
+    Grid,
+    /// Hacker terminal: a prompt and cursor, square cells, reverse video selection.
+    Term,
 }
 
-const STYLES: [(Style, &str); 3] = [(Style::Hazard, "HAZARD"), (Style::Hud, "HUD"), (Style::Block, "BLOCK")];
+const STYLES: [(Style, &str); 5] = [
+    (Style::Hazard, "HAZARD"),
+    (Style::Hud, "HUD"),
+    (Style::Block, "BLOCK"),
+    (Style::Grid, "GRID"),
+    (Style::Term, "TERM"),
+];
 const _: () = assert!(STYLES.len() == STYLE_COUNT as usize);
 
 pub fn style_name(index: u8) -> &'static str {
@@ -126,6 +136,7 @@ pub fn daily_flag(boot_count: u16) -> usize {
     boot_count as usize * FLAG_STEP % FLAGS.len()
 }
 
+#[derive(Clone, Copy)]
 struct Palette {
     name: &'static str,
     bg: u32,
@@ -158,32 +169,71 @@ const SOLID: [Palette; 4] = [
     },
     Palette { name: "LIME", bg: 0x000000, fg: 0xF2F2F2, muted: 0x707070, accent: 0x8CFF00, echo: 0xFFFFFF, stripes: &[rgb(0x8CFF00)] },
 ];
+/// Solid palettes added after the flags, so saved palette numbers keep their meaning.
+const LATER: [Palette; 2] = [
+    Palette {
+        name: "SYNTHWAVE",
+        bg: 0x12062A,
+        fg: 0xF6E7FF,
+        muted: 0x8466A8,
+        accent: 0xFF2BD6,
+        echo: 0x00F0FF,
+        // A sunset, top to bottom.
+        stripes: &[rgb(0xFFD319), rgb(0xFF901F), rgb(0xFF2975), rgb(0xF222FF), rgb(0x8C1EFF)],
+    },
+    Palette {
+        name: "PHOSPHOR",
+        bg: 0x010A03,
+        fg: 0xB6FFB6,
+        muted: 0x2F7A3B,
+        accent: 0x33FF33,
+        echo: 0x00C060,
+        stripes: &[rgb(0x33FF33), rgb(0x1E9E2A)],
+    },
+];
 /// Palette index of the flag that changes every boot. The flags follow it in `FLAGS` order.
 pub const DAILY: u8 = SOLID.len() as u8;
 const FIRST_FLAG: usize = DAILY as usize + 1;
-const _: () = assert!(FIRST_FLAG + FLAGS.len() == PALETTE_COUNT as usize);
+const FIRST_LATER: usize = FIRST_FLAG + FLAGS.len();
+const _: () = assert!(FIRST_LATER + LATER.len() == PALETTE_COUNT as usize);
+
+/// The solid palette at `index`, if it is one.
+fn solid(index: u8) -> Option<Palette> {
+    match index as usize {
+        i if i < SOLID.len() => Some(SOLID[i]),
+        i if i >= FIRST_LATER => LATER.get(i - FIRST_LATER).copied(),
+        _ => None,
+    }
+}
 
 pub fn palette_name(index: u8) -> &'static str {
-    match index as usize {
-        i if i < SOLID.len() => SOLID[i].name,
-        i if i == DAILY as usize => "DAILY",
-        i => FLAG_UI[(i - FIRST_FLAG) % FLAGS.len()].0,
+    match (solid(index), index as usize) {
+        (Some(p), _) => p.name,
+        (None, i) if i == DAILY as usize => "DAILY",
+        (None, i) => FLAG_UI[(i - FIRST_FLAG) % FLAGS.len()].0,
     }
 }
 
 /// Stripes of palette `index`, for its swatch.
 pub fn palette_stripes(index: u8, boot_count: u16) -> &'static [Rgb565] {
-    match index as usize {
-        i if i < SOLID.len() => SOLID[i].stripes,
-        i if i == DAILY as usize => FLAGS[daily_flag(boot_count)],
-        i => FLAGS[(i - FIRST_FLAG) % FLAGS.len()],
+    match (solid(index), index as usize) {
+        (Some(p), _) => p.stripes,
+        (None, i) if i == DAILY as usize => FLAGS[daily_flag(boot_count)],
+        (None, i) => FLAGS[(i - FIRST_FLAG) % FLAGS.len()],
     }
+}
+
+/// Whether palette `index` is a flag, whose stripes color bars and keys.
+fn is_flag(index: u8) -> bool {
+    solid(index).is_none()
 }
 
 /// Accent and echo colors of palette `index`.
 pub fn palette_pair(index: u8, boot_count: u16) -> (Rgb565, Rgb565) {
+    if let Some(p) = solid(index) {
+        return (rgb(p.accent), rgb(p.echo));
+    }
     let (accent, echo) = match index as usize {
-        i if i < SOLID.len() => (SOLID[i].accent, SOLID[i].echo),
         i if i == DAILY as usize => (FLAG_UI[daily_flag(boot_count)].1, FLAG_UI[daily_flag(boot_count)].2),
         i => (FLAG_UI[(i - FIRST_FLAG) % FLAGS.len()].1, FLAG_UI[(i - FIRST_FLAG) % FLAGS.len()].2),
     };
@@ -209,7 +259,7 @@ pub struct Theme {
 
 impl Theme {
     pub fn new(style: u8, palette: u8, boot_count: u16) -> Theme {
-        let (bg, fg, muted) = match SOLID.get(palette as usize) {
+        let (bg, fg, muted) = match solid(palette) {
             Some(p) => (rgb(p.bg), rgb(p.fg), rgb(p.muted)),
             None => (Rgb565::BLACK, Rgb565::WHITE, rgb(0x7C7C7C)),
         };
@@ -228,7 +278,7 @@ impl Theme {
             accent,
             echo,
             dim: mix(accent, bg, 80),
-            flag: palette >= DAILY,
+            flag: is_flag(palette),
             stripes,
             stripe_count,
         }
@@ -250,18 +300,18 @@ impl Theme {
 
     /// Tenths of a pixel per block row that block letters lean.
     pub fn slant(&self) -> i32 {
-        if self.style == Style::Block { 0 } else { 6 }
+        if matches!(self.style, Style::Block | Style::Term) { 0 } else { 6 }
     }
 
     /// Skew for small slanted shapes: underlines and markers.
     pub fn skew(&self) -> i32 {
-        if self.style == Style::Block { 0 } else { 2 }
+        if matches!(self.style, Style::Block | Style::Term) { 0 } else { 2 }
     }
 
     /// Color for dividers, grid lines and unit ticks.
     pub fn rule(&self) -> Rgb565 {
         match self.style {
-            Style::Hud => self.dim,
+            Style::Hud | Style::Grid | Style::Term => self.dim,
             _ => mix(self.fg, self.bg, 82),
         }
     }
@@ -303,6 +353,28 @@ impl Theme {
                 }
                 gfx::blocks(lcd, 6, 3, title, 2, 2, 0, ink(self.accent), None)
             }
+            Style::Grid => {
+                // Sunset lines under the title, thinning toward the horizon.
+                for (k, (y, h)) in [(16, 1), (18, 1), (20, 2)].into_iter().enumerate() {
+                    rect(lcd, 0, y, W, h, self.stripe(k, 3));
+                }
+                // Chrome: the title over an accent drop two pixels below it.
+                gfx::blocks(lcd, 6, 3, title, 2, 2, 6, self.accent, None);
+                gfx::blocks(lcd, 6, 1, title, 2, 2, 6, self.fg, None) + 2
+            }
+            Style::Term => {
+                for x in (0..W).step_by(4) {
+                    rect(lcd, x, 21, 2, 1, self.dim);
+                }
+                // The prompt: a chevron in 2-pixel blocks, as `blocks` draws letters.
+                for (row, col) in [0, 1, 2, 3, 2, 1, 0].into_iter().enumerate() {
+                    rect(lcd, 4 + col * 2, 4 + row as i32 * 2, 4, 2, self.echo);
+                }
+                let end = gfx::blocks(lcd, 20, 4, title, 2, 2, 0, self.accent, None);
+                // The cursor.
+                rect(lcd, end + 4, 4, 8, 14, self.accent);
+                end + 12
+            }
         };
         // The slant leans the top row up to 4 pixels right.
         end + 4
@@ -312,6 +384,8 @@ impl Theme {
     fn chip_row(&self) -> (i32, Rgb565) {
         match self.style {
             Style::Block => (2, self.accent),
+            // Above the sunset lines.
+            Style::Grid => (0, self.bg),
             _ => (3, self.bg),
         }
     }
@@ -458,6 +532,49 @@ impl Theme {
                     text(lcd, x + 4, y + 28, label, on, color);
                 }
             }
+            Style::Grid => {
+                rect(lcd, x, HEADER_H, KEYS_W, HEIGHT as i32 - HEADER_H, self.bg);
+                for (i, (label, hold)) in labels.iter().zip(holds).enumerate() {
+                    let y = HEADER_H + i as i32 * KEY_SLOT;
+                    if label.is_empty() {
+                        outline(lcd, x + 3, y + 3, 44, KEY_SLOT - 6, mix(self.fg, self.bg, 85));
+                        tiny(lcd, x + 5, y + 6, hold, self.muted, self.bg);
+                        continue;
+                    }
+                    let color = self.alternate(i, 4);
+                    // A neon tube: the line, a glow just inside it, and a lit tab on top.
+                    outline(lcd, x + 3, y + 3, 44, KEY_SLOT - 6, color);
+                    outline(lcd, x + 4, y + 4, 42, KEY_SLOT - 8, mix(color, self.bg, 65));
+                    rect(lcd, x + 3, y + 3, 44, TINY_H + 1, color);
+                    match hold {
+                        "" => tiny(lcd, x + 6, y + 4, KEY_NAMES[i], ink(color), color),
+                        hold => tiny(lcd, x + 4, y + 4, hold, ink(color), color),
+                    }
+                    text(lcd, x + 5, y + 27, label, self.fg, self.bg);
+                }
+            }
+            Style::Term => {
+                rect(lcd, x, HEADER_H, KEYS_W, HEIGHT as i32 - HEADER_H, self.bg);
+                for y in (HEADER_H + 2..HEIGHT as i32).step_by(4) {
+                    rect(lcd, x, y, 1, 2, self.dim);
+                }
+                for (i, (label, hold)) in labels.iter().zip(holds).enumerate() {
+                    let y = HEADER_H + i as i32 * KEY_SLOT;
+                    if i > 0 {
+                        for dx in (2..KEYS_W).step_by(4) {
+                            rect(lcd, x + dx, y, 2, 1, self.dim);
+                        }
+                    }
+                    tiny(lcd, x + 5, y + 6, KEY_NAMES[i], self.muted, self.bg);
+                    tiny(lcd, x + 5, y + 41, hold, self.muted, self.bg);
+                    if label.is_empty() {
+                        text(lcd, x + 5, y + 22, "--", self.dim, self.bg);
+                        continue;
+                    }
+                    let color = if self.flag { self.stripe(i, 4) } else { self.accent };
+                    text(lcd, x + 5, y + 22, label, color, self.bg);
+                }
+            }
         }
     }
 
@@ -469,6 +586,8 @@ impl Theme {
             Style::Hazard => 20,
             Style::Hud => 30,
             Style::Block => 12,
+            Style::Grid => 24,
+            Style::Term => 16,
         };
         let lit = (value * n * 2 + max) / (2 * max);
         let unlit = if self.style == Style::Block { mix(self.fg, self.bg, 88) } else { self.dim };
@@ -477,6 +596,10 @@ impl Theme {
             let color = match (i < lit, self.flag) {
                 (false, _) => unlit,
                 (true, true) => self.stripe(i as usize, n as usize),
+                // A sunset from the bottom of the stripes up: the meter warms as it fills.
+                (true, false) if self.style == Style::Grid => {
+                    self.stripes[(self.stripe_count - 1) - (i as usize * self.stripe_count / n as usize)]
+                }
                 (true, false) if self.style == Style::Hud && i == lit - 1 => self.echo,
                 (true, false) => self.accent,
             };
@@ -486,7 +609,11 @@ impl Theme {
                     let tall = h * (45 + 55 * i / n) / 100;
                     para(lcd, left, y + h - tall, (right - left - 2).max(2), tall, 1, color);
                 }
-                Style::Block => rect(lcd, left, y, right - left - 2, h, color),
+                Style::Block | Style::Term => rect(lcd, left, y, right - left - 2, h, color),
+                Style::Grid => {
+                    let tall = h * (40 + 60 * i / n) / 100;
+                    rect(lcd, left, y + h - tall, (right - left - 2).max(2), tall, color);
+                }
             }
         }
     }
@@ -504,13 +631,29 @@ impl Theme {
                 brackets(lcd, x, y, w, h, self.echo, 4);
                 (self.fg, self.echo, self.dim)
             }
-            Style::Block => {
+            Style::Block | Style::Term => {
                 rect(lcd, x, y, w, h, self.accent);
                 let on = ink(self.accent);
                 (on, mix(self.accent, on, 55), self.accent)
             }
+            Style::Grid => {
+                let fill = mix(self.accent, self.bg, 82);
+                rect(lcd, x, y, w, h, fill);
+                rect(lcd, x, y, w, 1, self.accent);
+                rect(lcd, x, y + h - 1, w, 1, self.accent);
+                rect(lcd, x, y, 3, h, self.echo);
+                (self.fg, self.echo, fill)
+            }
         }
     }
+}
+
+/// A one-pixel box.
+fn outline(lcd: &mut Lcd, x: i32, y: i32, w: i32, h: i32, color: Rgb565) {
+    rect(lcd, x, y, w, 1, color);
+    rect(lcd, x, y + h - 1, w, 1, color);
+    rect(lcd, x, y, 1, h, color);
+    rect(lcd, x + w - 1, y, 1, h, color);
 }
 
 /// Corner brackets `k` pixels long around a box.

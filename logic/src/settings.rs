@@ -1,6 +1,6 @@
 //! User settings and their EEPROM record.
 
-use crate::drill::{self, FIRST_RUNG, RUNGS};
+use crate::drill::{self, CHAR_SETS, CharSet, FIRST_RUNG, RUNGS};
 use crate::keyer::{MAX_WPM, MIN_WPM, Mode, Output};
 use crate::qso::Program;
 use crate::record::{self, body_mut, frame, is_sealed, unframe};
@@ -61,7 +61,7 @@ pub enum Practice {
     Chew { quiz: bool },
 }
 
-const PRACTICES: [Practice; 10] = [
+const PRACTICES: [Practice; 11] = [
     Practice::Drill(drill::Kind::Koch),
     Practice::Drill(drill::Kind::Words),
     Practice::Drill(drill::Kind::Calls),
@@ -72,6 +72,7 @@ const PRACTICES: [Practice; 10] = [
     Practice::Hunt,
     Practice::Chew { quiz: false },
     Practice::Chew { quiz: true },
+    Practice::Drill(drill::Kind::Chars),
 ];
 
 impl Practice {
@@ -140,13 +141,15 @@ pub struct Settings {
     pub last_practice: Option<Practice>,
     /// The HEAD rung, from `FIRST_RUNG`.
     pub head_rung: u8,
+    /// What the CHARS drill sends.
+    pub chars_set: CharSet,
 }
 
 pub const MAX_VOLUME: u8 = volume::MAX_LEVEL;
 pub const MIN_TONE_HZ: u16 = 300;
 pub const MAX_TONE_HZ: u16 = 1200;
-pub const STYLE_COUNT: u8 = 3;
-pub const PALETTE_COUNT: u8 = 16;
+pub const STYLE_COUNT: u8 = 5;
+pub const PALETTE_COUNT: u8 = 18;
 pub const MIN_RX_WPM: u8 = 5;
 pub const MAX_RX_WPM: u8 = 40;
 pub const TONE_STEP_HZ: u16 = 10;
@@ -189,6 +192,7 @@ pub enum Field {
     UsbOut,
     NinjaWords,
     Shortcut,
+    CharsSet,
 }
 
 impl Default for Settings {
@@ -201,7 +205,7 @@ impl Default for Settings {
             palette: 0, callsign, rx_wpm: 0, rx_effective: 0, pileup: Pileup::TakeTurns, human_fist: true,
             spread: true, reveal_lines: false, brightness: MAX_BRIGHTNESS, square: false, noise: 0, fading: 0,
             decoder_board: false, usb_out: UsbOut::Off, ninja_words: 500, shortcut: Shortcut::KeyOut,
-            last_practice: None, head_rung: FIRST_RUNG,
+            last_practice: None, head_rung: FIRST_RUNG, chars_set: CharSet::Letters,
         }
     }
 }
@@ -231,7 +235,8 @@ const NINJA_AT: usize = COUNT_AT + 1;
 const SHORTCUT_AT: usize = NINJA_AT + 1;
 const PRACTICE_AT: usize = SHORTCUT_AT + 1;
 const RUNG_AT: usize = PRACTICE_AT + 1;
-pub const RECORD_LEN: usize = RUNG_AT + 1 + record::OVERHEAD;
+const CHARS_AT: usize = RUNG_AT + 1;
+pub const RECORD_LEN: usize = CHARS_AT + 1 + record::OVERHEAD;
 /// Settings are kept in two copies and saved to them in turn, so a save cut off by power loss
 /// leaves the other copy whole. A save with count `n` goes to copy `n % COPIES`.
 pub const COPIES: usize = 2;
@@ -248,7 +253,7 @@ impl Settings {
     /// it once that exists), style, palette, callsign, receive speed, effective speed, QSO and
     /// ragchew flags, brightness, sound flags (bit 0 square), noise, fading, hardware flags, save
     /// count, NINJA words in hundreds, the F1 hold's index in `SHORTCUTS`, the last practice's
-    /// index in `PRACTICES` plus one, the HEAD rung.
+    /// index in `PRACTICES` plus one, the HEAD rung, the CHARS set's index in `CHAR_SETS`.
     pub fn encode(&self, count: u8) -> [u8; RECORD_LEN] {
         let mode = match self.mode {
             Mode::IambicA => 0,
@@ -286,6 +291,7 @@ impl Settings {
         body[SHORTCUT_AT] = SHORTCUTS.iter().position(|&c| c == self.shortcut).unwrap_or(0) as u8;
         body[PRACTICE_AT] = self.last_practice.and_then(|p| PRACTICES.iter().position(|&q| q == p)).map_or(0, |i| i as u8 + 1);
         body[RUNG_AT] = self.head_rung;
+        body[CHARS_AT] = CHAR_SETS.iter().position(|&c| c == self.chars_set).unwrap_or(0) as u8;
         frame(&mut record, MAGIC, VERSION);
         record
     }
@@ -368,6 +374,7 @@ impl Settings {
         let last_practice = body.get(PRACTICE_AT).and_then(|&i| PRACTICES.get((i as usize).checked_sub(1)?)).copied();
         let rungs = FIRST_RUNG..=RUNGS.len() as u8;
         let head_rung = body.get(RUNG_AT).copied().filter(|r| rungs.contains(r)).unwrap_or(FIRST_RUNG);
+        let chars_set = body.get(CHARS_AT).and_then(|&i| CHAR_SETS.get(i as usize)).copied().unwrap_or(defaults.chars_set);
         let hardware = if len >= BODY_LEN { body[V6_BODY] } else { defaults.decoder_board as u8 };
         let stored = hardware >> USB_OUT_SHIFT & USB_OUT_MASK;
         // A value from later firmware turns USB off instead of dropping the whole record.
@@ -412,6 +419,7 @@ impl Settings {
             shortcut,
             last_practice,
             head_rung,
+            chars_set,
         };
         let in_range = (MIN_WPM..=MAX_WPM).contains(&settings.wpm)
             && settings.volume <= MAX_VOLUME
@@ -486,6 +494,10 @@ impl Settings {
             Field::Shortcut => {
                 let i = SHORTCUTS.iter().position(|&c| c == self.shortcut).unwrap_or(0);
                 self.shortcut = SHORTCUTS[(i as i32 + d).rem_euclid(SHORTCUTS.len() as i32) as usize];
+            }
+            Field::CharsSet => {
+                let i = CHAR_SETS.iter().position(|&c| c == self.chars_set).unwrap_or(0);
+                self.chars_set = CHAR_SETS[(i as i32 + d).rem_euclid(CHAR_SETS.len() as i32) as usize];
             }
             Field::NinjaWords => {
                 let words = self.ninja_words as i32 + d * NINJA_WORDS_STEP as i32;
@@ -811,6 +823,29 @@ mod tests {
         frame(older, MAGIC, VERSION);
         let read = Settings::decode(&before).map(|s| (s.last_practice, s.head_rung));
         assert_eq!(read, Some((None, FIRST_RUNG)), "a save from before the fields");
+    }
+
+    #[test]
+    fn chars_set_steps_round_trips_and_reads_unknown_or_missing_as_letters() {
+        let mut s = Settings { wpm: 27, ..Settings::default() };
+        assert_eq!(s.chars_set, CharSet::Letters);
+        for expected in [CharSet::Alnum, CharSet::All, CharSet::Koch, CharSet::Letters] {
+            s.adjust(Field::CharsSet, 1);
+            assert_eq!(s.chars_set, expected);
+            assert_eq!(Settings::decode(&s.encode(0)), Some(s));
+        }
+        s.adjust(Field::CharsSet, -1);
+        assert_eq!(s.chars_set, CharSet::Koch);
+        let mut later = s.encode(0);
+        body_mut(&mut later)[CHARS_AT] = 99;
+        frame(&mut later, MAGIC, VERSION);
+        assert_eq!(Settings::decode(&later), Some(Settings { chars_set: CharSet::Letters, ..s }));
+        let mut before = [0xFF; 64];
+        let older = &mut before[..CHARS_AT + record::OVERHEAD];
+        body_mut(older).copy_from_slice(&s.encode(0)[record::BODY_START..record::BODY_START + CHARS_AT]);
+        frame(older, MAGIC, VERSION);
+        assert_eq!(Settings::decode(&before), Some(Settings { chars_set: CharSet::Letters, ..s }), "a save from before the field");
+        const { assert!(RECORD_LEN <= 64, "fits its EEPROM slot") };
     }
 
     #[test]

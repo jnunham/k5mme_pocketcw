@@ -47,6 +47,8 @@ const THINK_MS: u32 = 1500;
 /// Pack words to try for one that fits a group.
 const PICK_TRIES: usize = 20;
 const NEXT_GROUP_MS: u32 = 900;
+/// CHARS: time the hint stays up after its character plays again, before the next one.
+const HINT_HOLD_MS: u32 = 1500;
 const GROUP_DELAY_MS: u32 = 400;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -57,6 +59,8 @@ enum State {
     Copying,
     /// Scored, or for NINJA said; the next group starts at the deadline.
     Between,
+    /// CHARS: the hint shows, and the character plays again.
+    Hint,
     Paused,
     /// NINJA or HEAD with no content pack, or no pack word fits.
     NoPack,
@@ -69,6 +73,8 @@ struct Row {
     right: u8,
     /// False for a NINJA word you only listened to.
     scored: bool,
+    /// CHARS: you asked for a hint, so the row shows the answer and its code.
+    hinted: bool,
 }
 
 pub(super) struct Receive {
@@ -94,6 +100,7 @@ impl Receive {
             State::Waiting => "YOUR TURN",
             State::Copying => "KEYING",
             State::Between | State::NoPack => "",
+            State::Hint => "HINT",
             State::Paused => "PAUSED",
         }
     }
@@ -146,9 +153,11 @@ impl Ui {
 
     fn draw_receive_keys(&self, lcd: &mut Lcd) {
         let Some(Session::Receive(rx)) = &self.session else { return };
+        let chars = rx.drill.kind == Kind::Chars;
         let (again, pause) = match rx.state {
             State::NoPack => ("", ""),
             State::Paused => ("", "GO"),
+            _ if chars => ("HINT", "STOP"),
             _ => ("AGN", "STOP"),
         };
         self.softkeys(lcd, ["SET", again, pause, "BACK"]);
@@ -173,6 +182,10 @@ impl Ui {
                 let percent = if total > 0 { right as u32 * 100 / total as u32 } else { 0 };
                 let _ = write!(info, "  {total}/50 CHARS  {percent}%  NEED 90%");
                 &KOCH[..drill.level as usize]
+            }
+            Kind::Chars => {
+                let _ = write!(info, "SET {}  F2 HINTS  ? REPEATS", drill.char_set_name());
+                drill.char_set()
             }
             Kind::Ninja | Kind::Head if rx.state == State::NoPack => {
                 let _ = write!(info, "CONTENT PACK MISSING: INSTALL IT");
@@ -241,7 +254,9 @@ impl Ui {
             let y = ROW_Y + k as i32 * ROW_STEP;
             rect(lcd, 0, y, MAIN, ROW_STEP, t.bg);
             let Some(row) = row else { continue };
-            if row.scored {
+            if row.hinted {
+                draw_hinted(lcd, t, y, row.sent.as_str().bytes());
+            } else if row.scored {
                 draw_marked(lcd, t, y, COPY_X, row.sent.as_str().bytes(), &row.marks, row.right);
             } else {
                 draw_sent(lcd, t, y, row.sent.as_str().bytes());
@@ -262,10 +277,15 @@ impl Ui {
         let hint = match rx.drill.kind {
             Kind::Ninja => "LISTEN, OR KEY IT BACK  ? REPEATS",
             Kind::Head => "KEY IT BACK AFTER IT ENDS  ? REPEATS",
+            Kind::Chars => "KEY IT BACK  F2 FOR A HINT",
             _ => "KEY BACK WHAT YOU HEARD  ? REPEATS",
         };
         let foot = match rx.state {
             State::Paused => FootLine::format(format_args!("PAUSED: TOUCH THE KEY OR PRESS GO")),
+            State::Hint => {
+                let c = rx.group.as_str().as_bytes().first().copied().unwrap_or(b' ');
+                FootLine::format(format_args!("HINT: {}  {}  COUNTS AS MISSED", morse::text(&c), morse::code(c).unwrap_or("")))
+            }
             State::Waiting => FootLine::format(format_args!("{hint}")),
             _ => session_line(rx.session_right, rx.session_total, hint),
         };
@@ -277,6 +297,7 @@ impl Ui {
         let seed = self.next_seed();
         let Some(Session::Receive(rx)) = &mut self.session else { return };
         if !again {
+            rx.drill.set_chars(s.chars_set);
             let pack = self.pack.as_ref().ok();
             let group = match (rx.drill.kind, rx.drill.item()) {
                 (Kind::Ninja, _) => pack.and_then(|pack| ninja_word(&mut rx.drill, pack, lcd, s.ninja_words)).map(|(word, group)| {
@@ -329,6 +350,11 @@ impl Ui {
 
     pub(super) fn receive_played(&mut self, lcd: &mut Lcd, now_ms: u32) {
         let Some(Session::Receive(rx)) = &mut self.session else { return };
+        if rx.state == State::Hint {
+            rx.state = State::Between;
+            rx.deadline = Some(now_ms.wrapping_add(HINT_HOLD_MS));
+            return;
+        }
         if rx.state == State::Playing {
             rx.state = State::Waiting;
             let wait = if rx.drill.kind == Kind::Ninja { THINK_MS } else { START_MS };
@@ -339,7 +365,7 @@ impl Ui {
 
     pub(super) fn receive_key(&mut self, lcd: &mut Lcd, down: bool, at_ms: u32, dit_ms: u16) {
         let Some(Session::Receive(rx)) = &mut self.session else { return };
-        if matches!(rx.state, State::Between | State::Paused | State::NoPack) {
+        if matches!(rx.state, State::Between | State::Hint | State::Paused | State::NoPack) {
             return;
         }
         let was = rx.state;
@@ -396,7 +422,7 @@ impl Ui {
             self.say = Some(rx.word);
         }
         if ninja && rx.state == State::Waiting && rx.copy.as_str().trim().is_empty() {
-            push_scrolling(&mut rx.rows, Row { sent: rx.group, marks: [Mark::Missed; MAX_GROUP], right: 0, scored: false });
+            push_scrolling(&mut rx.rows, Row { sent: rx.group, marks: [Mark::Missed; MAX_GROUP], right: 0, scored: false, hinted: false });
             rx.copy.clear();
             rx.state = State::Between;
             rx.deadline = Some(now_ms.wrapping_add(NEXT_GROUP_MS));
@@ -405,7 +431,7 @@ impl Ui {
             return;
         }
         if rx.state == State::Waiting && rx.copy.as_str().trim().is_empty() {
-            push_scrolling(&mut rx.rows, Row { sent: rx.group, marks: [Mark::Missed; MAX_GROUP], right: 0, scored: false });
+            push_scrolling(&mut rx.rows, Row { sent: rx.group, marks: [Mark::Missed; MAX_GROUP], right: 0, scored: false, hinted: false });
             if rx.silent.is_some() {
                 rx.pause();
                 self.draw(lcd, s);
@@ -436,7 +462,7 @@ impl Ui {
             rx.session_total += scored.len as u16;
         }
         let level_up = score.level_up || missed.is_some_and(|missed| missed.level_up);
-        push_scrolling(&mut rx.rows, Row { sent: rx.group, marks: score.marks, right: score.right, scored: true });
+        push_scrolling(&mut rx.rows, Row { sent: rx.group, marks: score.marks, right: score.right, scored: true, hinted: false });
         rx.copy.clear();
         rx.state = State::Between;
         rx.deadline = Some(now_ms.wrapping_add(NEXT_GROUP_MS));
@@ -465,6 +491,42 @@ impl Ui {
         }
     }
 
+    /// CHARS: shows the character and its code, plays it again, and scores it as missed. A silent
+    /// group before it counts as missed too, as it does when you copy.
+    fn receive_hint(&mut self, lcd: &mut Lcd, s: &Settings) {
+        self.stop_players();
+        let seed = self.next_seed();
+        let Some(Session::Receive(rx)) = &mut self.session else { return };
+        let missed = rx.silent.take().map(|sent| rx.drill.score(sent.as_str(), "", &mut self.letters));
+        if let Some(missed) = missed
+            && let Some(row) = rx.rows.iter_mut().flatten().last()
+        {
+            *row = Row { marks: missed.marks, right: missed.right, scored: true, ..*row };
+        }
+        let score = rx.drill.score(rx.group.as_str(), "", &mut self.letters);
+        for scored in missed.iter().chain([&score]) {
+            self.history.copied(scored.right, scored.len as u8);
+            rx.session_right += scored.right as u16;
+            rx.session_total += scored.len as u16;
+        }
+        let sent_char = rx.group.as_str().as_bytes().first().copied().unwrap_or(b' ');
+        push_scrolling(&mut rx.rows, Row { sent: rx.group, marks: score.marks, right: 0, scored: true, hinted: true });
+        rx.copy.clear();
+        rx.state = State::Hint;
+        rx.deadline = None;
+        let (wpm, effective) = s.receive_speed(s.wpm);
+        let text = Text::<MAX_TEXT>::format(format_args!("{}", rx.group.as_str()));
+        let keying = Keying { wpm, effective, fist: 0 };
+        self.play = Some(Play { text, keying, seed, delay_ms: GROUP_DELAY_MS, pitch_hz: s.tone_hz, transmit: false });
+        self.draw_receive_keys(lcd);
+        self.draw_receive_info(lcd);
+        self.draw_receive_rows(lcd);
+        self.draw_receive_now(lcd);
+        // In the bright status color too, so it stands out and stays a while.
+        let c = sent_char;
+        self.status(lcd, FootLine::format(format_args!("HINT: {}  {}", morse::text(&c), morse::code(c).unwrap_or(""))).as_str());
+    }
+
     /// The dial stepped the Koch level; the caller redraws it.
     pub(super) fn step_level(&mut self, delta: i8) {
         let Some(Session::Receive(rx)) = &mut self.session else { return };
@@ -478,6 +540,11 @@ impl Ui {
         match action {
             Action::Soft(0) if rx.drill.kind == Kind::Ninja => self.open_settings_at(lcd, s, Section::Drills),
             Action::Soft(0) => self.open_settings_at(lcd, s, Section::Receive),
+            Action::Soft(1) if rx.drill.kind == Kind::Chars => {
+                if matches!(rx.state, State::Playing | State::Waiting | State::Copying) {
+                    self.receive_hint(lcd, s);
+                }
+            }
             Action::Soft(1) if matches!(rx.state, State::Playing | State::Waiting | State::Copying) => {
                 self.stop_players();
                 self.play_group(lcd, s, true);
@@ -551,6 +618,22 @@ fn pack_word(
 pub(super) fn draw_marked(lcd: &mut Lcd, t: &Theme, y: i32, copy_x: i32, sent: impl Iterator<Item = u8> + Clone, marks: &[Mark], right: u8) {
     draw_sent(lcd, t, y, sent.clone());
     draw_marks(lcd, t, y, copy_x, sent, marks, right);
+}
+
+/// A CHARS row you asked a hint for: the character, then from `COPY_X` the character and its code
+/// in the warning color, and a score of none right.
+fn draw_hinted(lcd: &mut Lcd, t: &Theme, y: i32, sent: impl Iterator<Item = u8> + Clone) {
+    draw_sent(lcd, t, y, sent.clone());
+    let mut x = COPY_X;
+    for c in sent.clone() {
+        x += draw_char(lcd, &SMALL, x, y, c, ink(WARN), WARN);
+        x += CHAR_W;
+        for d in morse::code(c).unwrap_or("").bytes() {
+            x += draw_char(lcd, &SMALL, x, y, d, WARN, t.bg);
+        }
+    }
+    let score = Text::<12>::format(format_args!("HINT 0/{}", sent.count()));
+    tiny(lcd, MAIN - 6 - score.len() as i32 * TINY_W, y + 3, score.as_str(), t.muted, t.bg);
 }
 
 fn draw_sent(lcd: &mut Lcd, t: &Theme, y: i32, sent: impl Iterator<Item = u8>) {

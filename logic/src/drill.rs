@@ -14,6 +14,8 @@ use crate::text::Text;
 pub enum Kind {
     /// Five-character groups from the first `level` Koch characters.
     Koch,
+    /// One character at a time from a `CharSet`, with a hint on demand.
+    Chars,
     Words,
     Calls,
     /// A content pack word, then the voice says it; see `Drill::pick_word`.
@@ -26,6 +28,7 @@ impl Kind {
     pub fn name(self) -> &'static str {
         match self {
             Kind::Koch => "KOCH",
+            Kind::Chars => "CHARS",
             Kind::Words => "WORDS",
             Kind::Calls => "CALLS",
             Kind::Ninja => "NINJA",
@@ -46,6 +49,44 @@ pub const MAX_LEVEL: u8 = KOCH.len() as u8;
 /// costs as much as missing them.
 const LEVEL_WINDOW: u16 = 50;
 const LEVEL_PERCENT: u16 = 90;
+
+/// What the CHARS drill sends.
+#[derive(Clone, Copy, PartialEq, Eq, Debug)]
+pub enum CharSet {
+    Letters,
+    /// Letters and digits.
+    Alnum,
+    /// Every Koch character: letters, digits, punctuation and prosigns.
+    All,
+    /// The Koch characters of your level.
+    Koch,
+}
+
+/// In the order the setting steps through; stored as the index here.
+pub const CHAR_SETS: [CharSet; 4] = [CharSet::Letters, CharSet::Alnum, CharSet::All, CharSet::Koch];
+const LETTERS: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ";
+const ALNUM: &[u8] = b"ABCDEFGHIJKLMNOPQRSTUVWXYZ0123456789";
+
+impl CharSet {
+    pub fn name(self) -> &'static str {
+        match self {
+            CharSet::Letters => "A-Z",
+            CharSet::Alnum => "A-Z 0-9",
+            CharSet::All => "ALL",
+            CharSet::Koch => "KOCH LEVEL",
+        }
+    }
+
+    /// The characters of this set at Koch level `level`.
+    pub fn chars(self, level: u8) -> &'static [u8] {
+        match self {
+            CharSet::Letters => LETTERS,
+            CharSet::Alnum => ALNUM,
+            CharSet::All => &KOCH[..],
+            CharSet::Koch => &KOCH[..level.clamp(MIN_LEVEL, MAX_LEVEL) as usize],
+        }
+    }
+}
 
 /// What one HEAD item holds.
 #[derive(Clone, Copy, PartialEq, Eq, Debug)]
@@ -112,12 +153,14 @@ pub struct Drill {
     rung: u8,
     /// HEAD copies in a row all right, and under half right.
     streaks: (u8, u8),
+    /// What CHARS sends.
+    chars: CharSet,
 }
 
 impl Drill {
     pub fn new(kind: Kind, level: u8, seed: u32) -> Drill {
         let level = level.clamp(MIN_LEVEL, MAX_LEVEL);
-        Drill { kind, level, rng: Rng::new(seed), window_right: 0, window_total: 0, left: None, rung: FIRST_RUNG, streaks: (0, 0) }
+        Drill { kind, level, rng: Rng::new(seed), window_right: 0, window_total: 0, left: None, rung: FIRST_RUNG, streaks: (0, 0), chars: CharSet::Letters }
     }
 
     /// Sets the level by hand. Turning back to the level just left restores its window, so a
@@ -152,6 +195,20 @@ impl Drill {
         first + self.rng.below(count.min(limit).max(1) as u32) as u16
     }
 
+    /// Sets what CHARS sends.
+    pub fn set_chars(&mut self, chars: CharSet) {
+        self.chars = chars;
+    }
+
+    pub fn char_set_name(&self) -> &'static str {
+        self.chars.name()
+    }
+
+    /// The characters CHARS sends now.
+    pub fn char_set(&self) -> &'static [u8] {
+        self.chars.chars(self.level)
+    }
+
     /// Sets the HEAD rung and starts its streaks over.
     pub fn set_rung(&mut self, rung: u8) {
         self.rung = rung.clamp(FIRST_RUNG, RUNGS.len() as u8);
@@ -173,9 +230,13 @@ impl Drill {
         let mut group = Text::new();
         match self.kind {
             Kind::Koch => {
+                let set = &KOCH[..self.level as usize];
                 for _ in 0..GROUP_LEN {
-                    group.push(self.pick(letters));
+                    group.push(self.pick(set, true, letters));
                 }
+            }
+            Kind::Chars => {
+                group.push(self.pick(self.char_set(), self.chars == CharSet::Koch, letters));
             }
             Kind::Words => {
                 for c in morse::chars(WORDS[self.rng.below(WORDS.len() as u32) as usize].as_bytes()) {
@@ -192,19 +253,22 @@ impl Drill {
         group
     }
 
-    /// A Koch character, weighted toward weak ones and the newest.
-    fn pick(&mut self, letters: &Letters) -> u8 {
-        let n = self.level as usize;
-        let weight = |i: usize| letters.weight(i) * if i == n - 1 { 2 } else { 1 };
+    /// A character of `set`, weighted toward weak ones, and with `newest` toward the last.
+    fn pick(&mut self, set: &[u8], newest: bool, letters: &Letters) -> u8 {
+        let n = set.len();
+        let weight = |i: usize| {
+            let base = letters::index(set[i]).map_or(2, |k| letters.weight(k));
+            base * if newest && i == n - 1 { 2 } else { 1 }
+        };
         let total: u32 = (0..n).map(weight).sum();
         let mut r = self.rng.below(total);
-        for (i, &c) in KOCH.iter().enumerate().take(n) {
+        for (i, &c) in set.iter().enumerate() {
             if r < weight(i) {
                 return c;
             }
             r -= weight(i);
         }
-        KOCH[n - 1]
+        set[n - 1]
     }
 
     /// Scores `copied` against `sent` as `score_copy` does, and moves the Koch level or the HEAD
@@ -391,6 +455,57 @@ mod tests {
             assert_eq!(group.len(), GROUP_LEN);
             assert!(group.as_str().bytes().all(|b| KOCH[..4].contains(&b)), "{}", group.as_str());
         }
+    }
+
+    #[test]
+    fn chars_sends_one_character_from_its_set() {
+        let letters = Letters::default();
+        for (set, level) in [(CharSet::Letters, 2), (CharSet::Alnum, 2), (CharSet::All, 2), (CharSet::Koch, 6)] {
+            let mut drill = Drill::new(Kind::Chars, level, 11);
+            drill.set_chars(set);
+            let pool = set.chars(level);
+            let mut seen = std::collections::BTreeSet::new();
+            for _ in 0..3000 {
+                let group = drill.next(&letters);
+                assert_eq!(group.len(), 1, "{set:?}");
+                let c = group.as_str().as_bytes()[0];
+                assert!(pool.contains(&c), "{set:?} sent {c}");
+                seen.insert(c);
+            }
+            assert_eq!(seen.len(), pool.len(), "{set:?} reaches every character");
+        }
+        assert_eq!(CharSet::Koch.chars(6), b"KMURES");
+        assert_eq!(CharSet::All.chars(2).len(), 44);
+    }
+
+    #[test]
+    fn a_hint_counts_as_missed_and_leaves_the_koch_level() {
+        let mut drill = Drill::new(Kind::Chars, 5, 1);
+        let mut letters = Letters::default();
+        for _ in 0..20 {
+            let score = drill.score("Q", "", &mut letters);
+            assert_eq!((score.right, score.len, score.level_up), (0, 1, false));
+        }
+        assert_eq!((drill.level, drill.window()), (5, (0, 0)));
+        let q = letters::index(b'Q').unwrap();
+        assert_eq!(letters.accuracy(q), Some((0, 20)));
+        assert!(drill.score("Q", "q", &mut letters).right == 1);
+    }
+
+    #[test]
+    fn chars_picks_weak_letters_more_often() {
+        let mut letters = Letters::default();
+        for c in LETTERS.iter().filter(|&&c| c != b'X') {
+            for _ in 0..30 {
+                letters.record(*c, Some(*c));
+            }
+        }
+        for _ in 0..30 {
+            letters.record(b'X', None);
+        }
+        let mut drill = Drill::new(Kind::Chars, 2, 7);
+        let xs = (0..5200).filter(|_| drill.next(&letters).as_str() == "X").count();
+        assert!(xs > 5200 / 26 * 3, "X came {xs} times");
     }
 
     #[test]

@@ -69,6 +69,7 @@ Noise and fading play in the receive drills, the ragchew, and on the POTA, SOTA 
 | - | - | - | - |
 | CHAR SPEED | MATCH, 5 to 40 WPM | MATCH | The speed of each character the device sends you: the drills, the ragchew, and the stations of POTA, SOTA and HUNT. MATCH uses your keyer SPEED. |
 | FARNSWORTH | OFF, 5 to 40 WPM | OFF | Longer gaps between characters and words, so the text comes at this slower overall speed. It never goes above CHAR SPEED. |
+| CHARS SET | A-Z, A-Z 0-9, ALL, KOCH LEVEL | A-Z | What the [CHARS](receive.md#chars) drill sends. ALL is every character the device knows: letters, digits, punctuation and prosigns. KOCH LEVEL is the characters of your Koch level. |
 
 ## DRILLS
 
@@ -132,10 +133,12 @@ Click the dial on CALL, then key your callsign. Each character you key goes at t
 
 | Row | Values | Default | What it sets |
 | - | - | - | - |
-| STYLE | HAZARD, HUD, BLOCK | HAZARD | The shapes of the screen: the frame, the header, the button labels and the selection. |
-| PALETTE | 16 palettes | ORANGE | The colors of the screen and of the boot screen. |
+| STYLE | HAZARD, HUD, BLOCK, GRID, TERM | HAZARD | The shapes of the screen: the frame, the header, the button labels and the selection. |
+| PALETTE | 18 palettes | ORANGE | The colors of the screen and of the boot screen. |
 | BRIGHTNESS | 10 % to 100 %, in steps of 10 % | 100 % | The brightness of the screen. |
 
-The palettes are ORANGE, CYAN, AMBER, LIME, DAILY, and the pride flags RAINBOW, TRANS, BI, LESBIAN, PAN, NONBIN, ACE, ARO, FLUID, AGENDER and QUEER. DAILY shows a different flag each time you turn the device on. While you edit STYLE or PALETTE, the whole screen changes as you turn the dial.
+The palettes are ORANGE, CYAN, AMBER, LIME, DAILY, the pride flags RAINBOW, TRANS, BI, LESBIAN, PAN, NONBIN, ACE, ARO, FLUID, AGENDER and QUEER, then SYNTHWAVE and PHOSPHOR.
+
+GRID is a retrowave look: chrome titles over sunset lines, neon button outlines and a meter that warms from violet to yellow. TERM is a terminal look: a `>` prompt and cursor, dashed rules and reverse video selection. They go with any palette; GRID with SYNTHWAVE and TERM with PHOSPHOR are made for each other. DAILY shows a different flag each time you turn the device on. While you edit STYLE or PALETTE, the whole screen changes as you turn the dial.
 
 The colors that grade your timing are the same in every palette: green, amber and red.
