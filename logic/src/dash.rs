@@ -238,6 +238,67 @@ impl Dash {
     }
 }
 
+/// The scenery's geometry, shared by the screen and the tests: the grid floor's moving lines and
+/// the mountains' outline. Rows of the floor count down from the horizon.
+pub mod scene {
+    /// The floor grid's vanishing point, and its lines' spacing and width in floor units.
+    pub const VX: i32 = 136;
+    const PERIOD: i32 = 40;
+    const LINE: i32 = 2;
+    /// Floor rows nearer the horizon than this have no moving lines.
+    pub const FIRST_LINE_ROW: i32 = 8;
+    /// Most moving line segments in a floor row.
+    pub const MAX_SEGMENTS: usize = 16;
+
+    /// The floor's scroll in floor units for `scroll` pixels of travel: at the horizon the floor
+    /// moves with the obstacles, and faster nearer you.
+    pub fn phase(scroll: u32) -> i32 {
+        ((scroll as u64 * 34 / 8) % PERIOD as u64) as i32
+    }
+
+    fn depth(row: i32) -> i32 {
+        row + 8
+    }
+
+    /// Whether column `x` of floor `row` is on a moving line, by the definition.
+    pub fn on_line(x: i32, row: i32, phase: i32) -> bool {
+        row >= FIRST_LINE_ROW && (((x - VX) * 34).div_euclid(depth(row)) + phase).rem_euclid(PERIOD) < LINE
+    }
+
+    fn ceil_div(n: i32, d: i32) -> i32 {
+        (n + d - 1).div_euclid(d)
+    }
+
+    /// The moving line segments of floor `row` across `width` columns, as (start, length), into
+    /// `out`; returns how many. Each covers exactly the columns `on_line` says.
+    pub fn segments(row: i32, phase: i32, width: i32, out: &mut [(i16, u8); MAX_SEGMENTS]) -> usize {
+        if row < FIRST_LINE_ROW {
+            return 0;
+        }
+        let d = depth(row);
+        // Floor units u = (x - VX) * 34 / d + phase; lines start where u is a multiple of PERIOD.
+        let u_min = (-VX * 34).div_euclid(d) + phase;
+        let u_max = ((width - 1 - VX) * 34).div_euclid(d) + phase;
+        let mut n = 0;
+        for k in u_min.div_euclid(PERIOD)..=u_max.div_euclid(PERIOD) {
+            let a = k * PERIOD - phase;
+            let start = (VX + ceil_div(a * d, 34)).max(0);
+            let end = (VX + ceil_div((a + LINE) * d, 34)).min(width);
+            if end > start && n < MAX_SEGMENTS {
+                out[n] = (start as i16, (end - start) as u8);
+                n += 1;
+            }
+        }
+        n
+    }
+
+    /// The mountains' height above the horizon at scrolled column `x`: two triangle waves.
+    pub fn mountain_height(x: i32) -> i32 {
+        let tri = |v: i32, p: i32| (v.rem_euclid(p) - p / 2).abs();
+        12 + tri(x, 96) * 22 / 48 + tri(x + 37, 42) * 10 / 21
+    }
+}
+
 #[cfg(test)]
 mod tests {
     extern crate std;
@@ -325,6 +386,26 @@ mod tests {
         }
         assert!(d.over());
         assert_eq!(d.step(20), Events::default());
+    }
+
+    #[test]
+    fn floor_segments_match_the_lines_pixel_for_pixel() {
+        let mut segs = [(0i16, 0u8); scene::MAX_SEGMENTS];
+        for phase in 0..40 {
+            for row in 0..42 {
+                let n = scene::segments(row, phase, FIELD_W, &mut segs);
+                for x in 0..FIELD_W {
+                    let in_seg = segs[..n].iter().any(|&(s, l)| x >= s as i32 && x < s as i32 + l as i32);
+                    assert_eq!(in_seg, scene::on_line(x, row, phase), "row {row} phase {phase} x {x}");
+                }
+            }
+        }
+        assert!((0..400u32).map(scene::phase).all(|p| (0..40).contains(&p)));
+    }
+
+    #[test]
+    fn mountains_stay_between_the_horizon_and_45_up() {
+        assert!((-500..5000).map(scene::mountain_height).all(|h| (12..=45).contains(&h)));
     }
 
     #[test]

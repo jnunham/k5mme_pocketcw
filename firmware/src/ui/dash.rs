@@ -1,7 +1,9 @@
 //! DASH on screen: a sky with a sun, mountains that scroll slowly behind, a perspective grid
-//! floor that scrolls fast, and the sprites. A full scene takes about 45 ms to draw, so each
-//! frame redraws only the floor, the mountains when they moved, and each sprite where it was
-//! and where it is now. Every redrawn pixel is the topmost sprite's, or the scenery's.
+//! floor that scrolls fast, and the sprites. The screen takes about a microsecond a pixel, and
+//! a whole scene is 44,000, so a frame sends only what changed: each floor line where it was and
+//! where it is, the pixel or two at the top of each column of mountains when they move, and each
+//! sprite where it was and where it is. Sprites stay above the floor, so the floor lines never
+//! cover them. A redrawn pixel is the topmost sprite's, or the scenery's.
 
 use embedded_graphics::{
     draw_target::DrawTarget,
@@ -9,28 +11,28 @@ use embedded_graphics::{
     prelude::{Point, Size},
     primitives::Rectangle,
 };
-use pocketcw_logic::dash::{Dash, HERO_X, Kind, MAX_OBSTACLES, Mode};
+use pocketcw_logic::dash::{
+    Dash, HERO_X, Kind, MAX_OBSTACLES, Mode,
+    scene::{self, FIRST_LINE_ROW, MAX_SEGMENTS},
+};
 
 use super::dash_art::{CRATE, HERO_JUMP, HERO_RUN1, HERO_RUN2, ROCK, TOWER};
-use crate::gfx::{self, mix};
+use crate::gfx::{self, mix, rect};
 use crate::lcd::Lcd;
 use crate::theme::{BAD, GOOD, MAIN, Theme};
 
 pub(super) const SCENE_TOP: i32 = 40;
 const GROUND_Y: i32 = 160;
 const SCENE_BOTTOM: i32 = 202;
-/// The floor grid's vanishing point.
-const VX: i32 = 136;
+const FLOOR_ROWS: usize = (SCENE_BOTTOM - GROUND_Y) as usize;
 const SUN_X: i32 = 200;
 const SUN_Y: i32 = 112;
 const SUN_R: i32 = 32;
-/// The mountains' highest top.
-const MOUNT_TOP: i32 = GROUND_Y - 45;
 const SKY_ROWS: usize = (GROUND_Y - SCENE_TOP) as usize;
 const SPRITES: usize = 1 + 2 * MAX_OBSTACLES;
 const BUBBLE_W: i32 = 14;
 const BUBBLE_H: i32 = 18;
-/// Rows of the floor that are grid lines, counted down from the horizon.
+/// Rows of the floor that are whole grid lines, counted down from the horizon; they never move.
 const FLOOR_LINES: [i32; 7] = [0, 2, 5, 9, 14, 20, 27];
 
 #[derive(Clone, Copy, PartialEq, Eq)]
@@ -98,8 +100,12 @@ pub(super) struct View {
     bubble: Rgb565,
     letter: Rgb565,
     drawn: [Option<Sprite>; SPRITES],
-    /// The mountains' scroll when last drawn.
+    /// The mountains' scroll when last drawn, and the top row of each column then.
     far: i32,
+    tops: [i16; MAIN as usize],
+    /// The floor's moving line segments as last drawn, per row.
+    segments: [[(i16, u8); MAX_SEGMENTS]; FLOOR_ROWS],
+    counts: [u8; FLOOR_ROWS],
 }
 
 impl View {
@@ -127,13 +133,30 @@ impl View {
             letter: t.bg,
             drawn: [None; SPRITES],
             far: -1,
+            tops: [GROUND_Y as i16; MAIN as usize],
+            segments: [[(0, 0); MAX_SEGMENTS]; FLOOR_ROWS],
+            counts: [0; FLOOR_ROWS],
         }
     }
 
-    /// The scenery at (x, y), with the floor scrolled to `phase` and the mountains to `far`.
-    fn scenery(&self, x: i32, y: i32, phase: i32, far: i32) -> Rgb565 {
+    fn set_tops(&mut self, far: i32) {
+        for (x, top) in self.tops.iter_mut().enumerate() {
+            *top = (GROUND_Y - scene::mountain_height(x as i32 + far)) as i16;
+        }
+        self.far = far;
+    }
+
+    /// A floor row's moving lines for `phase`.
+    fn row_segments(row: usize, phase: i32) -> ([(i16, u8); MAX_SEGMENTS], u8) {
+        let mut segs = [(0, 0); MAX_SEGMENTS];
+        let n = if FLOOR_LINES.contains(&(row as i32)) { 0 } else { scene::segments(row as i32, phase, MAIN, &mut segs) };
+        (segs, n as u8)
+    }
+
+    /// The scenery at (x, y), as `tops` and `segments` hold it.
+    fn scenery(&self, x: i32, y: i32) -> Rgb565 {
         if y < GROUND_Y {
-            let top = mountain_top(x + far);
+            let top = self.tops[x as usize] as i32;
             if y > top {
                 return self.mountain;
             }
@@ -154,12 +177,9 @@ impl View {
         if FLOOR_LINES.contains(&row) {
             return if (1..=8).contains(&row) { self.grid_far } else { self.grid };
         }
-        let depth = row + 8;
-        let u = ((x - VX) * 34).div_euclid(depth) + phase;
-        if u.rem_euclid(40) < 2 {
-            return if depth < 16 { self.grid_far } else { self.grid };
-        }
-        self.ground
+        let r = row as usize;
+        let on = self.segments[r][..self.counts[r] as usize].iter().any(|&(s, l)| x >= s as i32 && x < s as i32 + l as i32);
+        if on { self.grid } else { self.ground }
     }
 
     /// Sprite `s`'s pixel at (x, y), or None where it's clear.
@@ -196,7 +216,7 @@ impl View {
     }
 
     /// Redraws `area` of the scene with `sprites` over it.
-    fn draw(&self, lcd: &mut Lcd, area: Rect, sprites: &[Option<Sprite>; SPRITES], phase: i32, far: i32) {
+    fn draw(&self, lcd: &mut Lcd, area: Rect, sprites: &[Option<Sprite>; SPRITES]) {
         let r = area.clip();
         if r.w == 0 || r.h == 0 {
             return;
@@ -207,7 +227,7 @@ impl View {
             *slot = s.filter(|s| s.r.overlaps(r));
         }
         let pixel = |x: i32, y: i32| {
-            here.iter().flatten().find_map(|s| if s.r.overlaps(Rect { x, y, w: 1, h: 1 }) { self.sprite(s, x, y) } else { None }).unwrap_or_else(|| self.scenery(x, y, phase, far))
+            here.iter().flatten().find_map(|s| if s.r.overlaps(Rect { x, y, w: 1, h: 1 }) { self.sprite(s, x, y) } else { None }).unwrap_or_else(|| self.scenery(x, y))
         };
         let colors = (r.y..r.y + r.h).flat_map(|y| (r.x..r.x + r.w).map(move |x| (x, y))).map(|(x, y)| pixel(x, y));
         let _ = lcd.fill_contiguous(&Rectangle::new(Point::new(r.x, r.y), Size::new(r.w as u32, r.h as u32)), colors);
@@ -216,16 +236,27 @@ impl View {
     /// Draws the run as it stands: everything with `full`, or what changed since the last frame.
     pub(super) fn frame(&mut self, lcd: &mut Lcd, d: &Dash, full: bool) {
         let sprites = sprites(d);
-        // The floor moves with the obstacles at the horizon, and faster nearer you.
-        let phase = ((d.scroll as u64 * 34 / 8) % 40) as i32;
+        let phase = scene::phase(d.scroll);
+        // The mountains move an eighth as fast as the obstacles.
         let far = (d.scroll / 8) as i32;
-        let scene = Rect { x: 0, y: SCENE_TOP, w: MAIN, h: SCENE_BOTTOM - SCENE_TOP };
-        if full {
-            self.draw(lcd, scene, &sprites, phase, far);
+        if full || self.far < 0 {
+            self.set_tops(far);
+            for row in 0..FLOOR_ROWS {
+                (self.segments[row], self.counts[row]) = Self::row_segments(row, phase);
+            }
+            let all = Rect { x: 0, y: SCENE_TOP, w: MAIN, h: SCENE_BOTTOM - SCENE_TOP };
+            self.draw(lcd, all, &sprites);
         } else {
-            self.draw(lcd, Rect { x: 0, y: GROUND_Y, w: MAIN, h: SCENE_BOTTOM - GROUND_Y }, &sprites, phase, far);
+            self.move_floor(lcd, phase);
             if far != self.far {
-                self.draw(lcd, Rect { x: 0, y: MOUNT_TOP, w: MAIN, h: GROUND_Y - MOUNT_TOP }, &sprites, phase, far);
+                let was = self.tops;
+                self.set_tops(far);
+                for (x, (&old, &new)) in was.iter().zip(self.tops.iter()).enumerate() {
+                    if old != new {
+                        let (top, bottom) = (old.min(new) as i32, old.max(new) as i32);
+                        self.draw(lcd, Rect { x: x as i32, y: top, w: 1, h: bottom - top + 1 }, &sprites);
+                    }
+                }
             }
             for i in 0..SPRITES {
                 if sprites[i] == self.drawn[i] {
@@ -237,11 +268,33 @@ impl View {
                     (None, Some(was)) => was.r,
                     (None, None) => continue,
                 };
-                self.draw(lcd, area, &sprites, phase, far);
+                self.draw(lcd, area, &sprites);
             }
         }
         self.drawn = sprites;
-        self.far = far;
+    }
+
+    /// Moves the floor's lines to `phase`: in each row whose lines moved, the old ones go and
+    /// the new ones come.
+    fn move_floor(&mut self, lcd: &mut Lcd, phase: i32) {
+        for row in FIRST_LINE_ROW as usize..FLOOR_ROWS {
+            let (new, n) = Self::row_segments(row, phase);
+            let old = self.segments[row];
+            let m = self.counts[row];
+            let (new_used, old_used) = (&new[..n as usize], &old[..m as usize]);
+            if new_used == old_used {
+                continue;
+            }
+            let y = GROUND_Y + row as i32;
+            for &(s, l) in old_used.iter().filter(|seg| !new_used.contains(seg)) {
+                rect(lcd, s as i32, y, l as i32, 1, self.ground);
+            }
+            for &(s, l) in new_used.iter().filter(|seg| !old_used.contains(seg)) {
+                rect(lcd, s as i32, y, l as i32, 1, self.grid);
+            }
+            self.segments[row] = new;
+            self.counts[row] = n;
+        }
     }
 }
 
@@ -251,12 +304,6 @@ fn thing_art(kind: Kind) -> &'static [&'static [u8]] {
         Kind::Rock => ROCK,
         Kind::Tower => TOWER,
     }
-}
-
-/// The mountains' top row at scrolled column `x`: two triangle waves.
-fn mountain_top(x: i32) -> i32 {
-    let tri = |v: i32, p: i32| (v.rem_euclid(p) - p / 2).abs();
-    GROUND_Y - (12 + tri(x, 96) * 22 / 48 + tri(x + 37, 42) * 10 / 21)
 }
 
 /// Where everything is now: the runner, then each obstacle and its bubble.
@@ -272,7 +319,8 @@ fn sprites(d: &Dash) -> [Option<Sprite>; SPRITES] {
         let Some(o) = o else { continue };
         let art = thing_art(o.kind);
         let (w, h) = (2 * art[0].len() as i32, 2 * art.len() as i32);
-        let top = GROUND_Y - h + 2;
+        // Standing on the horizon line, not in the floor, so the floor lines never cover them.
+        let top = GROUND_Y - h;
         out[1 + 2 * i] = Some(Sprite { r: Rect { x: o.x, y: top, w, h }, art: Art::Thing(o.kind) });
         let fate = match (o.cleared, o.crashed) {
             (true, _) => Fate::Cleared,
