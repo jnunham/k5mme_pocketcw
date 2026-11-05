@@ -6,7 +6,17 @@ This is PocketCW 0.4.0 with these additions:
 - **CHARS** (RECEIVE → CHARS): one character at a time. Key it back, or press **F2 (HINT)** to see it and its dits and dahs. Choose what it sends in SETTINGS → RECEIVE → **CHARS SET**.
 - **Themes**: SETTINGS → THEME. **GRID** + **SYNTHWAVE** for retrowave, **TERM** + **PHOSPHOR** for a green-screen terminal.
 
-## Install (one command)
+## Install (one command, no setup)
+
+GitHub builds the firmware every time a change lands in your fork, so your Mac only downloads it. Open **Terminal** and paste:
+
+```bash
+curl -fsSL https://raw.githubusercontent.com/jnunham/k5mme_pocketcw/main/get-mine.sh | sh
+```
+
+It asks whether to install the content pack (answer **N** if the device already runs PocketCW 0.4.0), then follow the steps it prints. Each build is on your fork's **Releases** page.
+
+## Or build it on your own Mac
 
 1. Unzip the folder you got from Claude.
 2. Open **Terminal** (press ⌘-Space, type `Terminal`, press Enter).

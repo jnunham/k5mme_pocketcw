@@ -1,0 +1,69 @@
+# Builds this custom PocketCW on every push to main and publishes it as the newest release, so
+# get-mine.sh can install it with no Rust on the Mac. The logs go to the build-log branch.
+name: build my firmware
+
+on:
+  push:
+    branches: [main]
+    paths-ignore:
+      - "docs/**"
+      - "**.md"
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+concurrency:
+  group: build-mine
+  cancel-in-progress: false
+
+defaults:
+  run:
+    shell: bash
+
+jobs:
+  build:
+    runs-on: macos-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      - name: Set up Rust
+        run: |
+          rustup toolchain install stable --profile minimal
+          rustup default stable
+          rustup target add thumbv7em-none-eabihf
+          rustup component add llvm-tools
+
+      - name: Test the logic
+        run: (cd logic && cargo test) 2>&1 | tee test.log
+
+      - name: Build the firmware
+        run: sh tools/mkimage.sh 2>&1 | tee build.log
+
+      - name: Build the install tool
+        run: clang -O2 -arch arm64 -arch x86_64 -mmacosx-version-min=10.15 -o pocketcw-flash tools/pocketcw-flash.c -framework DiskArbitration -framework CoreFoundation 2>&1 | tee flash.log
+
+      - name: Publish the release
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          gh release create "mine-${{ github.run_number }}" firmware/target/A000014.bin pocketcw-flash \
+            --title "My PocketCW, build ${{ github.run_number }}" \
+            --notes "Built from ${{ github.sha }}. Install: curl -fsSL https://raw.githubusercontent.com/${{ github.repository }}/main/get-mine.sh | sh" \
+            --latest
+
+      - name: Save the logs to the build-log branch
+        if: always()
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: |
+          mkdir -p "$RUNNER_TEMP/log"
+          cp ./*.log "$RUNNER_TEMP/log/" 2>/dev/null || true
+          echo "${{ job.status }} run ${{ github.run_number }} commit ${{ github.sha }}" > "$RUNNER_TEMP/log/status.txt"
+          cd "$RUNNER_TEMP/log"
+          git init -q
+          git config user.name "github-actions[bot]"
+          git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
+          git add -A
+          git commit -q -m "Logs of build ${{ github.run_number }}"
+          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}" HEAD:build-log
