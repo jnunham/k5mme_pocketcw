@@ -2,6 +2,7 @@
 
 use crate::drill::{self, CHAR_SETS, CharSet, FIRST_RUNG, RUNGS};
 use crate::keyer::{MAX_WPM, MIN_WPM, Mode, Output};
+use crate::games::{GAMES, Game};
 use crate::mania;
 use crate::qso::Program;
 use crate::record::{self, body_mut, frame, is_sealed, unframe};
@@ -60,9 +61,10 @@ pub enum Practice {
     Qso(Program),
     Hunt,
     Chew { quiz: bool },
+    Game(Game),
 }
 
-const PRACTICES: [Practice; 12] = [
+const PRACTICES: [Practice; 17] = [
     Practice::Drill(drill::Kind::Koch),
     Practice::Drill(drill::Kind::Words),
     Practice::Drill(drill::Kind::Calls),
@@ -75,6 +77,11 @@ const PRACTICES: [Practice; 12] = [
     Practice::Chew { quiz: true },
     Practice::Drill(drill::Kind::Chars),
     Practice::Drill(drill::Kind::Mania),
+    Practice::Game(Game::Ladder),
+    Practice::Game(Game::Invaders),
+    Practice::Game(Game::Simon),
+    Practice::Game(Game::Wordle),
+    Practice::Game(Game::Fist),
 ];
 
 impl Practice {
@@ -85,6 +92,7 @@ impl Practice {
             Practice::Hunt => "HUNT",
             Practice::Chew { quiz: true } => "QUIZ",
             Practice::Chew { quiz: false } => "CHEW",
+            Practice::Game(game) => game.name(),
         }
     }
 }
@@ -147,13 +155,15 @@ pub struct Settings {
     pub chars_set: CharSet,
     /// The MANIA level, from `mania::FIRST_LEVEL`.
     pub mania_level: u8,
+    /// Each game's best score, in `GAMES` order.
+    pub bests: [u16; GAMES.len()],
 }
 
 pub const MAX_VOLUME: u8 = volume::MAX_LEVEL;
 pub const MIN_TONE_HZ: u16 = 300;
 pub const MAX_TONE_HZ: u16 = 1200;
 pub const STYLE_COUNT: u8 = 5;
-pub const PALETTE_COUNT: u8 = 18;
+pub const PALETTE_COUNT: u8 = 23;
 pub const MIN_RX_WPM: u8 = 5;
 pub const MAX_RX_WPM: u8 = 40;
 pub const TONE_STEP_HZ: u16 = 10;
@@ -211,6 +221,7 @@ impl Default for Settings {
             decoder_board: false, usb_out: UsbOut::Off, ninja_words: 500, shortcut: Shortcut::KeyOut,
             last_practice: None, head_rung: FIRST_RUNG, chars_set: CharSet::Letters,
             mania_level: mania::FIRST_LEVEL,
+            bests: [0; GAMES.len()],
         }
     }
 }
@@ -242,7 +253,8 @@ const PRACTICE_AT: usize = SHORTCUT_AT + 1;
 const RUNG_AT: usize = PRACTICE_AT + 1;
 const CHARS_AT: usize = RUNG_AT + 1;
 const MANIA_AT: usize = CHARS_AT + 1;
-pub const RECORD_LEN: usize = MANIA_AT + 1 + record::OVERHEAD;
+const BESTS_AT: usize = MANIA_AT + 1;
+pub const RECORD_LEN: usize = BESTS_AT + 2 * GAMES.len() + record::OVERHEAD;
 /// Settings are kept in two copies and saved to them in turn, so a save cut off by power loss
 /// leaves the other copy whole. A save with count `n` goes to copy `n % COPIES`.
 pub const COPIES: usize = 2;
@@ -259,7 +271,7 @@ impl Settings {
     /// it once that exists), style, palette, callsign, receive speed, effective speed, QSO and
     /// ragchew flags, brightness, sound flags (bit 0 square), noise, fading, hardware flags, save
     /// count, NINJA words in hundreds, the F1 hold's index in `SHORTCUTS`, the last practice's
-    /// index in `PRACTICES` plus one, the HEAD rung, the CHARS set's index in `CHAR_SETS`, the MANIA level.
+    /// index in `PRACTICES` plus one, the HEAD rung, the CHARS set's index in `CHAR_SETS`, the MANIA level, each game's best (LE).
     pub fn encode(&self, count: u8) -> [u8; RECORD_LEN] {
         let mode = match self.mode {
             Mode::IambicA => 0,
@@ -299,6 +311,9 @@ impl Settings {
         body[RUNG_AT] = self.head_rung;
         body[CHARS_AT] = CHAR_SETS.iter().position(|&c| c == self.chars_set).unwrap_or(0) as u8;
         body[MANIA_AT] = self.mania_level;
+        for (i, best) in self.bests.iter().enumerate() {
+            body[BESTS_AT + 2 * i..BESTS_AT + 2 * i + 2].copy_from_slice(&best.to_le_bytes());
+        }
         frame(&mut record, MAGIC, VERSION);
         record
     }
@@ -383,6 +398,12 @@ impl Settings {
         let head_rung = body.get(RUNG_AT).copied().filter(|r| rungs.contains(r)).unwrap_or(FIRST_RUNG);
         let mania_levels = mania::FIRST_LEVEL..=mania::LEVELS;
         let mania_level = body.get(MANIA_AT).copied().filter(|l| mania_levels.contains(l)).unwrap_or(defaults.mania_level);
+        let mut bests = [0u16; GAMES.len()];
+        for (i, best) in bests.iter_mut().enumerate() {
+            if let Some(&[lo, hi]) = body.get(BESTS_AT + 2 * i..BESTS_AT + 2 * i + 2).and_then(|b| b.first_chunk::<2>()) {
+                *best = u16::from_le_bytes([lo, hi]);
+            }
+        }
         let chars_set = body.get(CHARS_AT).and_then(|&i| CHAR_SETS.get(i as usize)).copied().unwrap_or(defaults.chars_set);
         let hardware = if len >= BODY_LEN { body[V6_BODY] } else { defaults.decoder_board as u8 };
         let stored = hardware >> USB_OUT_SHIFT & USB_OUT_MASK;
@@ -430,6 +451,7 @@ impl Settings {
             head_rung,
             chars_set,
             mania_level,
+            bests,
         };
         let in_range = (MIN_WPM..=MAX_WPM).contains(&settings.wpm)
             && settings.volume <= MAX_VOLUME
@@ -871,6 +893,19 @@ mod tests {
         body_mut(older).copy_from_slice(&s.encode(0)[record::BODY_START..record::BODY_START + MANIA_AT]);
         frame(older, MAGIC, VERSION);
         assert_eq!(Settings::decode(&before), Some(Settings { mania_level: mania::FIRST_LEVEL, ..s }));
+        const { assert!(RECORD_LEN <= 64) };
+    }
+
+    #[test]
+    fn game_bests_round_trip_and_read_missing_as_zero() {
+        let s = Settings { bests: [1234, 560, 9, 3, 87], last_practice: Some(Practice::Game(Game::Wordle)), ..Settings::default() };
+        assert_eq!(Settings::decode(&s.encode(0)), Some(s));
+        let mut before = [0xFF; 64];
+        let older = &mut before[..BESTS_AT + record::OVERHEAD];
+        body_mut(older).copy_from_slice(&s.encode(0)[record::BODY_START..record::BODY_START + BESTS_AT]);
+        frame(older, MAGIC, VERSION);
+        assert_eq!(Settings::decode(&before), Some(Settings { bests: [0; GAMES.len()], ..s }));
+        assert_eq!(GAMES[3].name(), "WORDLE");
         const { assert!(RECORD_LEN <= 64) };
     }
 

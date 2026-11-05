@@ -77,6 +77,7 @@ impl Ui {
             (Screen::Ragchew, Some(Session::Ragchew(c))) => c.badge(),
             (Screen::Qso, Some(Session::Qso(q))) => q.badge(),
             (Screen::Hunt, Some(Session::Hunt(h))) => h.badge(),
+            (Screen::Game, Some(Session::Game(a))) => a.badge(),
             _ => "",
         }
     }

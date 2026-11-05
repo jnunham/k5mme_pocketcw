@@ -2,7 +2,7 @@
 //! through the screen's targets and a turn steps the focused one. Send speed, receive speed
 //! and volume show as header chips.
 
-use pocketcw_logic::{dial::Target, drill::Kind, input::Action, settings::Settings};
+use pocketcw_logic::{dial::Target, drill::Kind, games::Game, input::Action, settings::Settings};
 
 use super::{Screen, Session, Ui};
 use crate::lcd::Lcd;
@@ -29,6 +29,13 @@ impl Ui {
             (Screen::Ragchew, Some(Session::Ragchew(c))) if !c.quiz => &LISTEN,
             (Screen::Ragchew, _) => &RECEIVE_FIRST,
             (Screen::Radio, _) => &RADIO,
+            // LADDER sets its own speed, and INVADERS, WORDLE and FIST are about your sending.
+            (Screen::Game, Some(Session::Game(a))) => match a.game() {
+                Game::Simon => &LISTEN,
+                Game::Ladder => &VOLUME,
+                Game::Invaders | Game::Wordle | Game::Fist => &SEND_FIRST,
+            },
+            (Screen::Game, _) => &VOLUME,
             (Screen::Letters | Screen::Progress | Screen::System, _) => &VOLUME,
             (Screen::Menu | Screen::Settings, _) => &[],
         }

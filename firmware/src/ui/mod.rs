@@ -5,6 +5,7 @@
 mod dial;
 mod exchange;
 mod footer;
+mod games;
 mod home;
 mod hunt;
 mod letters;
@@ -77,6 +78,7 @@ enum Screen {
     Letters,
     Progress,
     Radio,
+    Game,
 }
 
 /// The practice open on its screen, or paused while you are on another screen.
@@ -87,6 +89,7 @@ enum Session {
     Hunt(Hunting),
     Receive(Receive),
     Ragchew(Chew),
+    Game(games::Arcade),
 }
 
 impl Session {
@@ -96,6 +99,7 @@ impl Session {
             Session::Hunt(_) => Screen::Hunt,
             Session::Receive(_) => Screen::Receive,
             Session::Ragchew(_) => Screen::Ragchew,
+            Session::Game(_) => Screen::Game,
         }
     }
 
@@ -105,6 +109,7 @@ impl Session {
             Session::Hunt(_) => Practice::Hunt,
             Session::Receive(rx) => Practice::Drill(rx.kind()),
             Session::Ragchew(c) => Practice::Chew { quiz: c.quiz },
+            Session::Game(a) => Practice::Game(a.game()),
         }
     }
 
@@ -115,6 +120,7 @@ impl Session {
             Session::Hunt(h) => h.pause(),
             Session::Receive(rx) => rx.pause(),
             Session::Ragchew(c) => c.pause(),
+            Session::Game(a) => a.pause(),
         }
     }
 }
@@ -298,6 +304,7 @@ impl Ui {
             Screen::System => self.draw_system(lcd, s),
             Screen::Receive => self.draw_receive(lcd, s),
             Screen::Ragchew => self.draw_ragchew(lcd, s),
+            Screen::Game => self.draw_game(lcd, s),
             Screen::Letters => self.draw_letters(lcd, s),
             Screen::Progress => self.draw_progress(lcd, s),
             Screen::Radio => self.draw_radio(lcd, s),
@@ -339,6 +346,7 @@ impl Ui {
             Screen::System => self.system_act(lcd, s, action),
             Screen::Receive => self.receive_act(lcd, s, action),
             Screen::Ragchew => self.ragchew_act(lcd, s, action),
+            Screen::Game => self.game_act(lcd, s, action),
             Screen::Letters => self.letters_act(lcd, s, action),
             Screen::Progress => self.progress_act(lcd, s, action),
             Screen::Radio => self.radio_act(lcd, s, action),
@@ -511,6 +519,7 @@ impl Ui {
             Screen::Settings => self.settings_decoded(lcd, s, decoded),
             Screen::Receive => self.receive_decoded(lcd, s, decoded),
             Screen::Ragchew => self.ragchew_decoded(lcd, s, decoded),
+            Screen::Game => self.game_decoded(lcd, s, decoded),
             Screen::Menu | Screen::System | Screen::Letters | Screen::Progress | Screen::Radio => {}
         }
     }
@@ -539,12 +548,16 @@ impl Ui {
                     if on_tape {
                         self.tape_interval(lcd, s, &iv);
                     }
+                    if self.screen == Screen::Game {
+                        self.game_interval(&iv);
+                    }
                 }
                 match self.screen {
                     Screen::Qso => self.qso_key(down, at_ms, dit),
                     Screen::Hunt => self.hunt_key(down, at_ms, dit),
                     Screen::Receive => self.receive_key(lcd, down, at_ms, dit),
                     Screen::Ragchew => self.ragchew_key(lcd, s, down, at_ms, dit),
+                    Screen::Game => self.game_key(lcd, down, at_ms, dit),
                     _ => {}
                 }
             }
@@ -602,6 +615,7 @@ impl Ui {
             Screen::Hunt => self.hunt_played(now_ms),
             Screen::Receive => self.receive_played(lcd, now_ms),
             Screen::Ragchew => self.ragchew_played(lcd, s, now_ms),
+            Screen::Game => self.game_played(lcd, now_ms),
             Screen::Home => self.memory_played(lcd, now_ms),
             _ => {}
         }
@@ -614,7 +628,7 @@ impl Ui {
             return Some(Command::Stop);
         }
         let play = self.play.take().or_else(|| self.qso_next_play(s)).or_else(|| self.hunt_next_play(s))?;
-        self.listening = matches!(self.screen, Screen::Receive | Screen::Ragchew | Screen::Qso | Screen::Hunt);
+        self.listening = matches!(self.screen, Screen::Receive | Screen::Ragchew | Screen::Qso | Screen::Hunt | Screen::Game);
         Some(Command::Play(play))
     }
 
@@ -667,6 +681,7 @@ impl Ui {
             (Screen::Hunt, Some(Session::Hunt(h))) => h.over_deadline.or(h.cq_deadline),
             (Screen::Receive, Some(Session::Receive(rx))) => rx.deadline,
             (Screen::Ragchew, Some(Session::Ragchew(c))) => c.deadline,
+            (Screen::Game, Some(Session::Game(a))) => a.deadline,
             (Screen::Home, _) => self.sending?.again_at,
             _ => None,
         }
@@ -696,6 +711,7 @@ impl Ui {
             Screen::Hunt => self.hunt_timeout(lcd, s, now_ms),
             Screen::Receive => self.receive_timeout(lcd, s, now_ms),
             Screen::Ragchew => self.ragchew_timeout(lcd, s, now_ms),
+            Screen::Game => self.game_timeout(lcd, s, now_ms),
             Screen::Home => self.memory_timeout(lcd, s),
             _ => {}
         }
@@ -776,6 +792,7 @@ impl Ui {
             Some(Screen::Hunt) => self.hunt_resume(lcd, s),
             Some(Screen::Receive) => self.receive_resume(lcd, s),
             Some(Screen::Ragchew) => self.ragchew_resume(lcd, s),
+            Some(Screen::Game) => self.game_resume(lcd, s),
             _ => {}
         }
     }
@@ -788,6 +805,7 @@ impl Ui {
             Practice::Qso(program) => self.open_qso(lcd, s, program),
             Practice::Hunt => self.open_hunt(lcd, s),
             Practice::Chew { quiz } => self.open_ragchew(lcd, s, quiz),
+            Practice::Game(game) => self.open_game(lcd, s, game),
         }
     }
 

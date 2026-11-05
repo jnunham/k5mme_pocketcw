@@ -311,11 +311,22 @@ impl Drill {
     }
 }
 
-/// Scores `copied` against `sent`, ignoring spaces and case, and records each sent character.
-pub fn score_copy(sent: &str, copied: &str, letters: &mut Letters) -> Score {
+/// Scores `copied` against `sent`, ignoring spaces and case, and records nothing.
+pub fn compare(sent: &str, copied: &str) -> Score {
     let sent = squash::<MAX_GROUP>(sent);
     let copied = squash::<MAX_COPY>(copied);
-    let score = align(sent.as_str().as_bytes(), copied.as_str().as_bytes());
+    align(sent.as_str().as_bytes(), copied.as_str().as_bytes())
+}
+
+/// A random word or abbreviation heard on the air, as text: `QTH`, `<BK>`.
+pub fn word(rng: &mut Rng) -> &'static str {
+    WORDS[rng.below(WORDS.len() as u32) as usize]
+}
+
+/// Scores `copied` against `sent`, ignoring spaces and case, and records each sent character.
+pub fn score_copy(sent: &str, copied: &str, letters: &mut Letters) -> Score {
+    let score = compare(sent, copied);
+    let sent = squash::<MAX_GROUP>(sent);
     for (&s, mark) in sent.as_str().as_bytes().iter().zip(&score.marks) {
         match *mark {
             Mark::Right => letters.record(s, Some(s)),

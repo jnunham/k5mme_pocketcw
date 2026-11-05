@@ -170,7 +170,7 @@ const SOLID: [Palette; 4] = [
     Palette { name: "LIME", bg: 0x000000, fg: 0xF2F2F2, muted: 0x707070, accent: 0x8CFF00, echo: 0xFFFFFF, stripes: &[rgb(0x8CFF00)] },
 ];
 /// Solid palettes added after the flags, so saved palette numbers keep their meaning.
-const LATER: [Palette; 2] = [
+const LATER: [Palette; 7] = [
     Palette {
         name: "SYNTHWAVE",
         bg: 0x12062A,
@@ -189,6 +189,55 @@ const LATER: [Palette; 2] = [
         accent: 0x33FF33,
         echo: 0x00C060,
         stripes: &[rgb(0x33FF33), rgb(0x1E9E2A)],
+    },
+    // Red on black keeps your eyes dark-adapted at night.
+    Palette {
+        name: "NIGHT",
+        bg: 0x000000,
+        fg: 0xD02418,
+        muted: 0x6A140E,
+        accent: 0xFF2A1A,
+        echo: 0x9A1A10,
+        stripes: &[rgb(0xFF2A1A), rgb(0x9A1A10)],
+    },
+    // Dark on light, for the sun.
+    Palette {
+        name: "DAYLIGHT",
+        bg: 0xF4F4F0,
+        fg: 0x101010,
+        muted: 0x5E5E5E,
+        accent: 0x0050D0,
+        echo: 0xC83000,
+        stripes: &[rgb(0x0050D0), rgb(0xC83000)],
+    },
+    // The four greens of the first Game Boy.
+    Palette {
+        name: "DMG",
+        bg: 0x9BBC0F,
+        fg: 0x0F380F,
+        muted: 0x4F7020,
+        accent: 0x306230,
+        echo: 0x0F380F,
+        stripes: &[rgb(0x0F380F), rgb(0x306230), rgb(0x8BAC0F)],
+    },
+    // Nixie glow and brass.
+    Palette {
+        name: "NIXIE",
+        bg: 0x0A0603,
+        fg: 0xFFB46B,
+        muted: 0x7A5030,
+        accent: 0xFF7A1C,
+        echo: 0xC8A060,
+        stripes: &[rgb(0xFF7A1C), rgb(0xC8A060)],
+    },
+    Palette {
+        name: "VAPOR",
+        bg: 0x1A1033,
+        fg: 0xF0F0FF,
+        muted: 0x8A7FB0,
+        accent: 0x7FFFD4,
+        echo: 0xFF9AD5,
+        stripes: &[rgb(0xFF9AD5), rgb(0xC9A0FF), rgb(0x7FFFD4)],
     },
 ];
 /// Palette index of the flag that changes every boot. The flags follow it in `FLAGS` order.

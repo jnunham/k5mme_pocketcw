@@ -1,10 +1,11 @@
 # Builds this custom PocketCW on Linux on every push to main and publishes it as the newest release, so
-# get-mine.sh can install it with no Rust on the Mac. The logs go to the build-log branch.
+# get-mine.sh can install it with no Rust on the Mac. A push to dev only builds. The logs go to
+# the build-log-<branch> branch.
 name: build my firmware
 
 on:
   push:
-    branches: [main]
+    branches: [main, dev]
     paths-ignore:
       - "docs/**"
       - "**.md"
@@ -46,6 +47,7 @@ jobs:
         run: curl -fsSL -o pocketcw-flash https://github.com/kvmet/k5mme_pocketcw/releases/download/v0.4.0/pocketcw-flash
 
       - name: Publish the release
+        if: github.ref == 'refs/heads/main'
         env:
           GH_TOKEN: ${{ github.token }}
         run: |
@@ -68,4 +70,4 @@ jobs:
           git config user.email "41898282+github-actions[bot]@users.noreply.github.com"
           git add -A
           git commit -q -m "Logs of build ${{ github.run_number }}"
-          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}" HEAD:build-log
+          git push -q -f "https://x-access-token:${GH_TOKEN}@github.com/${{ github.repository }}" HEAD:build-log-${{ github.ref_name }}

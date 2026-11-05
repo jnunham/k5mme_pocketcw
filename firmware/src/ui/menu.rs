@@ -4,6 +4,7 @@
 use pocketcw_logic::{
     drill::Kind,
     input::Action,
+    games::Game,
     qso::Program,
     settings::{Practice, Settings},
 };
@@ -24,9 +25,10 @@ pub(super) enum List {
     Top,
     Receive,
     OnAir,
+    Games,
     Stats,
 }
-pub(super) const LISTS: usize = 4;
+pub(super) const LISTS: usize = 5;
 
 #[derive(Clone, Copy, PartialEq, Eq)]
 enum Item {
@@ -51,8 +53,8 @@ const TOP: [Row; 7] = [
     row("RESUME", "PICK UP WHERE YOU LEFT OFF", "", Item::Resume),
     row("RECEIVE", "KOCH  CHARS  MANIA  WORDS AND MORE", "", Item::List(List::Receive)),
     row("ON AIR", "POTA  SOTA  HUNT  CHEW  QUIZ", "", Item::List(List::OnAir)),
-    row("TIMING", "ZOOMED TAPE AND HISTOGRAMS", "", Item::Open(Screen::Timing)),
-    row("STATS", "LETTER ACCURACY AND PROGRESS", "", Item::List(List::Stats)),
+    row("GAMES", "LADDER  INVADERS  SIMON  WORDLE  FIST", "", Item::List(List::Games)),
+    row("STATS", "TIMING, LETTER ACCURACY, PROGRESS", "", Item::List(List::Stats)),
     row("SETTINGS", "KEYER, SOUND, MEMORIES, CALL, THEME", "", Item::Open(Screen::Settings)),
     row("SYSTEM", "VERSION  HARDWARE CHECKS  BATTERY", "", Item::Open(Screen::System)),
 ];
@@ -77,7 +79,16 @@ const ON_AIR: [Row; 6] = [
     row("RADIO", "DECODE THE BOARD OR MIDI IN", "", Item::Open(Screen::Radio)),
 ];
 
-const STATS: [Row; 2] = [
+const GAMES: [Row; 5] = [
+    row("LADDER", "CALLS SPEED UP AS YOU COPY THEM", "AFTER RUFZXP  DL4MM, IV3XYM", Item::Practice(Practice::Game(Game::Ladder))),
+    row("INVADERS", "KEY THE FALLING LETTERS AWAY", "", Item::Practice(Practice::Game(Game::Invaders))),
+    row("SIMON", "KEY BACK A SEQUENCE THAT GROWS", "", Item::Practice(Practice::Game(Game::Simon))),
+    row("WORDLE", "GUESS THE WORD BY KEYING IT", "", Item::Practice(Practice::Game(Game::Wordle))),
+    row("FIST", "KEY WORDS, SCORED ON YOUR TIMING", "", Item::Practice(Practice::Game(Game::Fist))),
+];
+
+const STATS: [Row; 3] = [
+    row("TIMING", "ZOOMED TAPE AND HISTOGRAMS", "", Item::Open(Screen::Timing)),
     row("LETTERS", "ACCURACY AND MIXUPS PER CHARACTER", "", Item::Open(Screen::Letters)),
     row("PROGRESS", "PRACTICE TIME AND SESSION TOTALS", "", Item::Open(Screen::Progress)),
 ];
@@ -87,6 +98,7 @@ fn rows(list: List) -> &'static [Row] {
         List::Top => &TOP,
         List::Receive => &RECEIVE,
         List::OnAir => &ON_AIR,
+        List::Games => &GAMES,
         List::Stats => &STATS,
     }
 }
@@ -96,11 +108,12 @@ fn title(list: List) -> &'static str {
         List::Top => "MENU",
         List::Receive => "RECEIVE",
         List::OnAir => "ON AIR",
+        List::Games => "GAMES",
         List::Stats => "STATS",
     }
 }
 
-const ALL: [List; LISTS] = [List::Top, List::Receive, List::OnAir, List::Stats];
+const ALL: [List; LISTS] = [List::Top, List::Receive, List::OnAir, List::Games, List::Stats];
 
 impl Session {
     fn item(&self) -> Item {
@@ -166,6 +179,10 @@ impl Ui {
             Item::List(_) => Text::format(format_args!(">")),
             Item::Practice(Practice::Drill(Kind::Koch)) => Text::format(format_args!("LEVEL {}", self.letters.level)),
             Item::Practice(Practice::Drill(Kind::Head)) => Text::format(format_args!("RUNG {}", s.head_rung)),
+            Item::Practice(Practice::Game(game)) => {
+                let best = s.bests[game.index()];
+                if best == 0 { Text::new() } else { Text::format(format_args!("BEST {best}{}", if game == Game::Fist { "%" } else { "" })) }
+            }
             Item::Practice(Practice::Drill(Kind::Mania)) => Text::format(format_args!("LEVEL {}", s.mania_level)),
             Item::Practice(Practice::Drill(Kind::Chars)) => Text::format(format_args!("{}", s.chars_set.name())),
             _ => Text::new(),
