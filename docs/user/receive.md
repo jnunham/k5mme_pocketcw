@@ -8,6 +8,7 @@ To start, open RECEIVE in the [menu](menu.md), then the drill. The header shows 
 | - | - |
 | KOCH | Groups of 5 characters from the Koch characters of your level. |
 | CHARS | One character from the CHARS SET, with a hint on F2. See [CHARS](#chars). |
+| MANIA | One character; pick it from up to four choices on F1 to F4, or key it. See [MANIA](#mania). |
 | WORDS | One common word or abbreviation heard on the air, such as `QTH`, `5NN` or `<BK>`. |
 | CALLS | One US callsign. |
 | NINJA | One word from the content pack, then the voice says it. See [NINJA](#ninja). |
@@ -47,6 +48,19 @@ CHARS sends one character at a time. Key back what you heard. If you don't know 
 CHARS SET in the RECEIVE section of the [settings](settings.md#receive) sets what it sends: A-Z, A-Z 0-9, ALL, or the characters of your Koch level. F1 (SET) opens that section. The drill picks characters you copy badly more often, as KOCH does. CHARS does not change your Koch level.
 
 The row of a hinted character shows the character and its code in amber, and `HINT 0/1` at the right.
+
+## MANIA
+
+MANIA is a listening game in the spirit of the Morse Mania app. The device plays one character, and the F1 to F4 labels show up to four choices. Press the one you heard. You can also key the character instead, to practice sending; key `?` to hear it again.
+
+- Right: the next character plays.
+- Wrong: the badge shows `WRONG`, the footer shows what it was and its code, such as `IT WAS Q  --.-`, and it plays again.
+
+Each level adds characters, mostly in mirror pairs whose codes swap dits and dahs, so you learn them together: E and T, I and M, A and N, S and O, U and G, R and K, W and D, then H, B and J, F and Q, L and Y, P and X, then V, C and Z, and the digits 1 and 6, 2 and 7, 3 and 8, 4 and 9, 5 and 0. The choices always include the mirror of the answer when the level has it. The level's new characters come up more often, and so do the ones you get wrong.
+
+A round is 20 characters. 16 right passes with one star, 18 earns two, and all 20 earns three. A pass opens the next level. The info line shows the result; press F3 (GO) or key any character for the next round. Turn the dial to LEVEL to go back to an easier level or replay one. The device keeps your level.
+
+While a character waits for your answer, all four F keys are choices: hold F4 to go HOME. Between characters and rounds, F1 (SET) and F4 (BACK) work as in the other drills.
 
 ## NINJA
 
@@ -107,7 +121,7 @@ The device keeps your level and your progress toward the next level while you us
 | F3 (STOP or GO) | Pauses the drill, or starts it again. While the drill is paused, a character you key also starts it again. |
 | F4 (BACK) | Pauses the drill and opens the RECEIVE list of the [menu](menu.md). Click the drill or RESUME there to go on. |
 | Dial turn | Changes the focused header value. See [Header values](controls.md#header-values). |
-| Dial turn on `LEVEL` | KOCH only: sets your level, 2 to 44. A new level starts its progress count from zero; turn back to the level you left and its count returns. |
+| Dial turn on `LEVEL` | KOCH: sets your level, 2 to 44. A new level starts its progress count from zero; turn back to the level you left and its count returns. MANIA: sets your level, 1 to 20, and starts a new round. |
 | Dial click | Moves the focus to the next header value. |
 | Dial hold | Turns the device off. |
 | Key | Keys your copy. |

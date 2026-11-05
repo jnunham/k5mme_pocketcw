@@ -16,6 +16,8 @@ pub enum Kind {
     Koch,
     /// One character at a time from a `CharSet`, with a hint on demand.
     Chars,
+    /// Pick the character you hear from up to four choices; see `mania`.
+    Mania,
     Words,
     Calls,
     /// A content pack word, then the voice says it; see `Drill::pick_word`.
@@ -29,6 +31,7 @@ impl Kind {
         match self {
             Kind::Koch => "KOCH",
             Kind::Chars => "CHARS",
+            Kind::Mania => "MANIA",
             Kind::Words => "WORDS",
             Kind::Calls => "CALLS",
             Kind::Ninja => "NINJA",
@@ -248,7 +251,7 @@ impl Drill {
                 let _ = write!(group, "{}", call.as_str());
             }
             Kind::Head if self.item() == Item::Sentence => group = ragchew::sentence(&mut self.rng),
-            Kind::Ninja | Kind::Head => {}
+            Kind::Ninja | Kind::Head | Kind::Mania => {}
         }
         group
     }

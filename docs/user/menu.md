@@ -28,6 +28,7 @@ The header of the top list shows your callsign.
 | - | - |
 | KOCH | The Koch drill. The right end shows your level, such as `LEVEL 12`. |
 | CHARS | One character at a time, with a hint when you need one. The right end shows the CHARS SET, such as `A-Z`. |
+| MANIA | The listening game: hear a character, pick it. The right end shows your level, such as `LEVEL 4`. |
 | WORDS | The words drill. |
 | CALLS | The callsigns drill. |
 | NINJA | Morse, then the word spoken. |

@@ -19,6 +19,7 @@ pub mod keyer;
 pub mod letters;
 pub mod listen;
 pub mod log;
+pub mod mania;
 mod math;
 pub mod memories;
 pub mod midi;

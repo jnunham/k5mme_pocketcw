@@ -1,64 +1,39 @@
-# Building this custom version on a Mac
+# Installing this custom version from a Mac
 
-This is PocketCW with three additions:
+This is PocketCW 0.4.0 with these additions:
 
-- **CHARS drill** (RECEIVE → CHARS): one character at a time. Key back what you hear; press **F2 (HINT)** to see the character and its dits and dahs, hear it again, and move on (it counts as a miss, so you'll get it more often). Pick the characters in SETTINGS → RECEIVE → **CHARS SET**: A-Z, A-Z 0-9, ALL, or KOCH LEVEL.
-- **GRID style + SYNTHWAVE palette**: retrowave.
-- **TERM style + PHOSPHOR palette**: green-screen hacker terminal.
+- **MANIA** (RECEIVE → MANIA): a listening game in the style of the Morse Mania app. Hear a character and pick it from the choices on F1–F4, or key it. Levels add characters in mirror pairs (A `.-` / N `-.`); 16 of 20 right opens the next level.
+- **CHARS** (RECEIVE → CHARS): one character at a time. Key it back, or press **F2 (HINT)** to see it and its dits and dahs. Choose what it sends in SETTINGS → RECEIVE → **CHARS SET**.
+- **Themes**: SETTINGS → THEME. **GRID** + **SYNTHWAVE** for retrowave, **TERM** + **PHOSPHOR** for a green-screen terminal.
 
-Pick the looks in SETTINGS → THEME → STYLE and PALETTE.
+## Install (one command)
 
-## 1. One-time setup
+1. Unzip the folder you got from Claude.
+2. Open **Terminal** (press ⌘-Space, type `Terminal`, press Enter).
+3. Type `sh ` (with a space after it), drag **install-mine.sh** from the folder onto the Terminal window, and press Enter.
 
-Open Terminal and run these one at a time:
+The script does everything:
 
-```bash
-xcode-select --install
-```
+- The first time, it installs Apple's command line tools. If a window pops up asking to install them, click **Install**, wait for it to finish, then run step 3 again.
+- The first time, it installs Rust, the language the firmware is written in. That takes a few minutes.
+- It builds your firmware.
+- It asks whether to install the content pack too. If the device already runs PocketCW 0.4.0, answer **N**. On a device that has never had PocketCW, answer **y**.
+- It installs the firmware the same way the official installer does: follow the steps it prints to put the device in update mode, and type your Mac password when it asks.
 
-(If it says the tools are already installed, that's fine.)
+Your settings, Koch level and the content pack stay on the device.
 
-```bash
-curl --proto '=https' --tlsv1.2 -sSf https://sh.rustup.rs | sh
-```
+After a change from Claude, unzip the new folder and run step 3 again; the setup steps are skipped once they're done, so it goes straight to building and installing.
 
-Press Enter to accept the defaults, then close and reopen Terminal.
+To only build without installing: `sh install-mine.sh build`.
 
-```bash
-rustup target add thumbv7em-none-eabihf
-rustup component add llvm-tools
-```
-
-## 2. Build
-
-Unzip the source, then `cd` into the folder (type `cd `, then drag the folder onto the Terminal window and press Enter).
-
-```bash
-(cd logic && cargo test)
-sh tools/mkimage.sh
-```
-
-The tests should end with `test result: ok`. `mkimage.sh` ends with a line like
-`target/A000014.bin: pocketcw-firmware, 1xxxxx bytes`.
-
-**If the build stops with an error, copy the whole error and send it to Claude.**
-
-## 3. Install it on the device
-
-Build the install tool once:
-
-```bash
-clang -O2 -arch arm64 -arch x86_64 -mmacosx-version-min=10.15 -o tools/pocketcw-flash tools/pocketcw-flash.c -framework DiskArbitration -framework CoreFoundation
-```
-
-Then install:
-
-```bash
-tools/pocketcw-flash firmware/target/A000014.bin
-```
-
-Follow the steps it prints (it puts the device in update mode and asks for your Mac password). Your settings, Koch level and the content pack are kept.
+**If anything fails, copy everything Terminal printed and send it to Claude.**
 
 ## Going back
 
-To return to the official PocketCW, install the `A000014.bin` from the newest release the same way, or follow the user manual's install page. The bootloader is never touched, so you can always reinstall.
+The official installer puts the official PocketCW back:
+
+```bash
+curl -fsSL https://kvmet.github.io/k5mme_pocketcw/install.sh | sh
+```
+
+The bootloader is never touched, so you can always install again.

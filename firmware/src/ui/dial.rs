@@ -24,7 +24,7 @@ impl Ui {
             (Screen::Home, _) => &super::home::TARGETS,
             (Screen::Timing, _) => &SEND_FIRST,
             (Screen::Qso | Screen::Hunt, _) => &RECEIVE_FIRST,
-            (Screen::Receive, Some(Session::Receive(rx))) if rx.kind() == Kind::Koch => &KOCH,
+            (Screen::Receive, Some(Session::Receive(rx))) if matches!(rx.kind(), Kind::Koch | Kind::Mania) => &KOCH,
             (Screen::Receive, _) => &RECEIVE_FIRST,
             (Screen::Ragchew, Some(Session::Ragchew(c))) if !c.quiz => &LISTEN,
             (Screen::Ragchew, _) => &RECEIVE_FIRST,
@@ -107,7 +107,7 @@ impl Ui {
             Action::Turn(delta) => {
                 let Some(target) = self.focused() else { return false };
                 if !target.step(s, delta) {
-                    self.step_level(delta);
+                    self.step_level(s, delta);
                 }
                 if target == Target::Receive || target == Target::Send && s.rx_wpm == 0 {
                     self.bot_speed_changed(s);

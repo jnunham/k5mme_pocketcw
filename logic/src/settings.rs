@@ -2,6 +2,7 @@
 
 use crate::drill::{self, CHAR_SETS, CharSet, FIRST_RUNG, RUNGS};
 use crate::keyer::{MAX_WPM, MIN_WPM, Mode, Output};
+use crate::mania;
 use crate::qso::Program;
 use crate::record::{self, body_mut, frame, is_sealed, unframe};
 use crate::synth::{self, Sound};
@@ -61,7 +62,7 @@ pub enum Practice {
     Chew { quiz: bool },
 }
 
-const PRACTICES: [Practice; 11] = [
+const PRACTICES: [Practice; 12] = [
     Practice::Drill(drill::Kind::Koch),
     Practice::Drill(drill::Kind::Words),
     Practice::Drill(drill::Kind::Calls),
@@ -73,6 +74,7 @@ const PRACTICES: [Practice; 11] = [
     Practice::Chew { quiz: false },
     Practice::Chew { quiz: true },
     Practice::Drill(drill::Kind::Chars),
+    Practice::Drill(drill::Kind::Mania),
 ];
 
 impl Practice {
@@ -143,6 +145,8 @@ pub struct Settings {
     pub head_rung: u8,
     /// What the CHARS drill sends.
     pub chars_set: CharSet,
+    /// The MANIA level, from `mania::FIRST_LEVEL`.
+    pub mania_level: u8,
 }
 
 pub const MAX_VOLUME: u8 = volume::MAX_LEVEL;
@@ -206,6 +210,7 @@ impl Default for Settings {
             spread: true, reveal_lines: false, brightness: MAX_BRIGHTNESS, square: false, noise: 0, fading: 0,
             decoder_board: false, usb_out: UsbOut::Off, ninja_words: 500, shortcut: Shortcut::KeyOut,
             last_practice: None, head_rung: FIRST_RUNG, chars_set: CharSet::Letters,
+            mania_level: mania::FIRST_LEVEL,
         }
     }
 }
@@ -236,7 +241,8 @@ const SHORTCUT_AT: usize = NINJA_AT + 1;
 const PRACTICE_AT: usize = SHORTCUT_AT + 1;
 const RUNG_AT: usize = PRACTICE_AT + 1;
 const CHARS_AT: usize = RUNG_AT + 1;
-pub const RECORD_LEN: usize = CHARS_AT + 1 + record::OVERHEAD;
+const MANIA_AT: usize = CHARS_AT + 1;
+pub const RECORD_LEN: usize = MANIA_AT + 1 + record::OVERHEAD;
 /// Settings are kept in two copies and saved to them in turn, so a save cut off by power loss
 /// leaves the other copy whole. A save with count `n` goes to copy `n % COPIES`.
 pub const COPIES: usize = 2;
@@ -253,7 +259,7 @@ impl Settings {
     /// it once that exists), style, palette, callsign, receive speed, effective speed, QSO and
     /// ragchew flags, brightness, sound flags (bit 0 square), noise, fading, hardware flags, save
     /// count, NINJA words in hundreds, the F1 hold's index in `SHORTCUTS`, the last practice's
-    /// index in `PRACTICES` plus one, the HEAD rung, the CHARS set's index in `CHAR_SETS`.
+    /// index in `PRACTICES` plus one, the HEAD rung, the CHARS set's index in `CHAR_SETS`, the MANIA level.
     pub fn encode(&self, count: u8) -> [u8; RECORD_LEN] {
         let mode = match self.mode {
             Mode::IambicA => 0,
@@ -292,6 +298,7 @@ impl Settings {
         body[PRACTICE_AT] = self.last_practice.and_then(|p| PRACTICES.iter().position(|&q| q == p)).map_or(0, |i| i as u8 + 1);
         body[RUNG_AT] = self.head_rung;
         body[CHARS_AT] = CHAR_SETS.iter().position(|&c| c == self.chars_set).unwrap_or(0) as u8;
+        body[MANIA_AT] = self.mania_level;
         frame(&mut record, MAGIC, VERSION);
         record
     }
@@ -374,6 +381,8 @@ impl Settings {
         let last_practice = body.get(PRACTICE_AT).and_then(|&i| PRACTICES.get((i as usize).checked_sub(1)?)).copied();
         let rungs = FIRST_RUNG..=RUNGS.len() as u8;
         let head_rung = body.get(RUNG_AT).copied().filter(|r| rungs.contains(r)).unwrap_or(FIRST_RUNG);
+        let mania_levels = mania::FIRST_LEVEL..=mania::LEVELS;
+        let mania_level = body.get(MANIA_AT).copied().filter(|l| mania_levels.contains(l)).unwrap_or(defaults.mania_level);
         let chars_set = body.get(CHARS_AT).and_then(|&i| CHAR_SETS.get(i as usize)).copied().unwrap_or(defaults.chars_set);
         let hardware = if len >= BODY_LEN { body[V6_BODY] } else { defaults.decoder_board as u8 };
         let stored = hardware >> USB_OUT_SHIFT & USB_OUT_MASK;
@@ -420,6 +429,7 @@ impl Settings {
             last_practice,
             head_rung,
             chars_set,
+            mania_level,
         };
         let in_range = (MIN_WPM..=MAX_WPM).contains(&settings.wpm)
             && settings.volume <= MAX_VOLUME
@@ -846,6 +856,22 @@ mod tests {
         frame(older, MAGIC, VERSION);
         assert_eq!(Settings::decode(&before), Some(Settings { chars_set: CharSet::Letters, ..s }), "a save from before the field");
         const { assert!(RECORD_LEN <= 64, "fits its EEPROM slot") };
+    }
+
+    #[test]
+    fn mania_level_round_trips_and_reads_unknown_or_missing_as_the_first() {
+        let s = Settings { mania_level: 7, ..Settings::default() };
+        assert_eq!(Settings::decode(&s.encode(0)), Some(s));
+        let mut later = s.encode(0);
+        body_mut(&mut later)[MANIA_AT] = mania::LEVELS + 1;
+        frame(&mut later, MAGIC, VERSION);
+        assert_eq!(Settings::decode(&later), Some(Settings { mania_level: mania::FIRST_LEVEL, ..s }));
+        let mut before = [0xFF; 64];
+        let older = &mut before[..MANIA_AT + record::OVERHEAD];
+        body_mut(older).copy_from_slice(&s.encode(0)[record::BODY_START..record::BODY_START + MANIA_AT]);
+        frame(older, MAGIC, VERSION);
+        assert_eq!(Settings::decode(&before), Some(Settings { mania_level: mania::FIRST_LEVEL, ..s }));
+        const { assert!(RECORD_LEN <= 64) };
     }
 
     #[test]

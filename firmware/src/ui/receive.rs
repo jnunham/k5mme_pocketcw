@@ -10,6 +10,7 @@ use pocketcw_logic::{
     drill::{Drill, Item, Kind, MAX_COPY, MAX_GROUP, Mark, RUNGS},
     input::Action,
     letters::{KOCH, Mastery},
+    mania::{self, CHOICES, Mania, ROUND},
     morse,
     pack::WORD_TEXT,
     player::{Keying, MAX_TEXT},
@@ -59,9 +60,12 @@ enum State {
     Copying,
     /// Scored, or for NINJA said; the next group starts at the deadline.
     Between,
-    /// CHARS: the hint shows, and the character plays again.
+    /// CHARS: the hint shows, and the character plays again. MANIA: the right answer to a wrong
+    /// pick shows, and plays again.
     Hint,
     Paused,
+    /// MANIA: a round ended; its result shows until GO.
+    RoundOver,
     /// NINJA or HEAD with no content pack, or no pack word fits.
     NoPack,
 }
@@ -75,6 +79,8 @@ struct Row {
     scored: bool,
     /// CHARS: you asked for a hint, so the row shows the answer and its code.
     hinted: bool,
+    /// MANIA: your pick, marked, then the code of what was sent.
+    mania: bool,
 }
 
 pub(super) struct Receive {
@@ -91,6 +97,9 @@ pub(super) struct Receive {
     /// The last group, which got no copy and is not scored yet. A second such group pauses the
     /// drill, and neither counts.
     silent: Option<Text<MAX_GROUP>>,
+    mania: Mania,
+    /// MANIA: how the last round went, while `RoundOver` shows it.
+    result: Option<mania::Result>,
 }
 
 impl Receive {
@@ -100,8 +109,10 @@ impl Receive {
             State::Waiting => "YOUR TURN",
             State::Copying => "KEYING",
             State::Between | State::NoPack => "",
+            State::Hint if self.drill.kind == Kind::Mania => "WRONG",
             State::Hint => "HINT",
             State::Paused => "PAUSED",
+            State::RoundOver => "DONE",
         }
     }
 
@@ -117,12 +128,14 @@ impl Receive {
             session_right: 0,
             session_total: 0,
             silent: None,
+            mania: Mania::new(mania::FIRST_LEVEL, seed.rotate_left(16)),
+            result: None,
         }
     }
 
     /// Groups are playing or waiting on you, not paused.
     pub(super) fn running(&self) -> bool {
-        !matches!(self.state, State::Paused | State::NoPack)
+        !matches!(self.state, State::Paused | State::NoPack | State::RoundOver)
     }
 
     pub(super) fn kind(&self) -> Kind {
@@ -154,6 +167,17 @@ impl Ui {
     fn draw_receive_keys(&self, lcd: &mut Lcd) {
         let Some(Session::Receive(rx)) = &self.session else { return };
         let chars = rx.drill.kind == Kind::Chars;
+        if rx.drill.kind == Kind::Mania {
+            let c = rx.mania.choices();
+            let keys = match rx.state {
+                State::Playing | State::Waiting | State::Copying => {
+                    [choice_label(&c[0]), choice_label(&c[1]), choice_label(&c[2]), choice_label(&c[3])]
+                }
+                State::RoundOver | State::Paused => ["SET", "", "GO", "BACK"],
+                _ => ["SET", "", "STOP", "BACK"],
+            };
+            return self.softkeys(lcd, keys);
+        }
         let (again, pause) = match rx.state {
             State::NoPack => ("", ""),
             State::Paused => ("", "GO"),
@@ -186,6 +210,31 @@ impl Ui {
             Kind::Chars => {
                 let _ = write!(info, "SET {}  F2 HINTS  ? REPEATS", drill.char_set_name());
                 drill.char_set()
+            }
+            Kind::Mania => {
+                let m = &rx.mania;
+                match (rx.state, rx.result) {
+                    (State::RoundOver, Some(r)) => {
+                        let _ = write!(info, "ROUND {}/{}  ", r.right, ROUND);
+                        let _ = match r.stars {
+                            0 => write!(info, "NEED 16 TO PASS"),
+                            stars => {
+                                (0..stars).for_each(|_| _ = info.push(b'*'));
+                                if r.unlocked { write!(info, "  LEVEL {} OPEN", m.level()) } else { write!(info, "  PASSED") }
+                            }
+                        };
+                    }
+                    _ => {
+                        let level = Text::<10>::format(format_args!("LEVEL {}", m.level()));
+                        let (fg, bg) = if self.focused() == Some(Target::Level) { (ink(t.accent), t.accent) } else { (t.muted, t.bg) };
+                        tiny(lcd, info_x, INFO_Y, level.as_str(), fg, bg);
+                        info_x += level.len() as i32 * TINY_W;
+                        let (asked, right) = m.progress();
+                        let _ = write!(info, "  {asked}/{ROUND}  {right} RIGHT  NEW ");
+                        m.new_chars().iter().for_each(|c| _ = info.write_str(morse::text(c)));
+                    }
+                }
+                m.set()
             }
             Kind::Ninja | Kind::Head if rx.state == State::NoPack => {
                 let _ = write!(info, "CONTENT PACK MISSING: INSTALL IT");
@@ -230,7 +279,12 @@ impl Ui {
                 Some(Mastery::Weak) => (ink(BAD), BAD),
             };
             let w = draw_char(lcd, &TINY, x, y, c, fg, bg);
-            if drill.kind == Kind::Koch && i + 1 == set.len() {
+            let new = match drill.kind {
+                Kind::Koch => i + 1 == set.len(),
+                Kind::Mania => i + rx.mania.new_chars().len() >= set.len(),
+                _ => false,
+            };
+            if new {
                 rect(lcd, x, y + 11, w - 1, 1, t.accent);
             }
         }
@@ -254,7 +308,9 @@ impl Ui {
             let y = ROW_Y + k as i32 * ROW_STEP;
             rect(lcd, 0, y, MAIN, ROW_STEP, t.bg);
             let Some(row) = row else { continue };
-            if row.hinted {
+            if row.mania {
+                draw_mania_row(lcd, t, y, row);
+            } else if row.hinted {
                 draw_hinted(lcd, t, y, row.sent.as_str().bytes());
             } else if row.scored {
                 draw_marked(lcd, t, y, COPY_X, row.sent.as_str().bytes(), &row.marks, row.right);
@@ -278,13 +334,16 @@ impl Ui {
             Kind::Ninja => "LISTEN, OR KEY IT BACK  ? REPEATS",
             Kind::Head => "KEY IT BACK AFTER IT ENDS  ? REPEATS",
             Kind::Chars => "KEY IT BACK  F2 FOR A HINT",
+            Kind::Mania => "PICK F1-F4, OR KEY IT  ? REPEATS",
             _ => "KEY BACK WHAT YOU HEARD  ? REPEATS",
         };
         let foot = match rx.state {
             State::Paused => FootLine::format(format_args!("PAUSED: TOUCH THE KEY OR PRESS GO")),
+            State::RoundOver => FootLine::format(format_args!("GO: NEXT ROUND  DIAL: PICK A LEVEL")),
             State::Hint => {
                 let c = rx.group.as_str().as_bytes().first().copied().unwrap_or(b' ');
-                FootLine::format(format_args!("HINT: {}  {}  COUNTS AS MISSED", morse::text(&c), morse::code(c).unwrap_or("")))
+                let what = if rx.drill.kind == Kind::Mania { "IT WAS" } else { "HINT:" };
+                FootLine::format(format_args!("{what} {}  {}", morse::text(&c), morse::code(c).unwrap_or("")))
             }
             State::Waiting => FootLine::format(format_args!("{hint}")),
             _ => session_line(rx.session_right, rx.session_total, hint),
@@ -307,6 +366,11 @@ impl Ui {
                 (Kind::Head, Item::Words { count, min, max }) => {
                     pack.and_then(|pack| head_words(&mut rx.drill, pack, lcd, count, min as usize..=max as usize))
                 }
+                (Kind::Mania, _) => {
+                    let mut group = Text::new();
+                    let _ = group.push(rx.mania.next(&self.letters));
+                    Some(group)
+                }
                 _ => Some(rx.drill.next(&self.letters)),
             };
             let Some(group) = group else {
@@ -325,8 +389,13 @@ impl Ui {
         let (wpm, effective) = s.receive_speed(s.wpm);
         let text = Text::<MAX_TEXT>::format(format_args!("{}", rx.group.as_str()));
         let keying = Keying { wpm, effective, fist: 0 };
+        let mania = rx.drill.kind == Kind::Mania;
         self.play = Some(Play { text, keying, seed, delay_ms: GROUP_DELAY_MS, pitch_hz: s.tone_hz, transmit: false });
         self.draw_receive_now(lcd);
+        if mania {
+            self.draw_receive_keys(lcd);
+            self.draw_receive_info(lcd);
+        }
     }
 
     pub(super) fn open_receive(&mut self, lcd: &mut Lcd, s: &Settings, kind: Kind) {
@@ -336,6 +405,7 @@ impl Ui {
             rx.drill.resume(self.koch_window.1);
         }
         rx.drill.set_rung(s.head_rung);
+        rx.mania.set_level(s.mania_level);
         self.session = Some(Session::Receive(rx));
         self.open(lcd, s, Screen::Receive);
         self.play_group(lcd, s, false);
@@ -358,14 +428,15 @@ impl Ui {
         if rx.state == State::Playing {
             rx.state = State::Waiting;
             let wait = if rx.drill.kind == Kind::Ninja { THINK_MS } else { START_MS };
-            rx.deadline = Some(now_ms.wrapping_add(wait));
+            // MANIA waits for your answer as long as you like.
+            rx.deadline = (rx.drill.kind != Kind::Mania).then(|| now_ms.wrapping_add(wait));
             self.draw_receive_now(lcd);
         }
     }
 
     pub(super) fn receive_key(&mut self, lcd: &mut Lcd, down: bool, at_ms: u32, dit_ms: u16) {
         let Some(Session::Receive(rx)) = &mut self.session else { return };
-        if matches!(rx.state, State::Between | State::Hint | State::Paused | State::NoPack) {
+        if matches!(rx.state, State::Between | State::Hint | State::Paused | State::NoPack | State::RoundOver) {
             return;
         }
         let was = rx.state;
@@ -384,13 +455,27 @@ impl Ui {
         }
     }
 
-    pub(super) fn receive_decoded(&mut self, lcd: &mut Lcd, s: &Settings, decoded: Decoded) {
+    pub(super) fn receive_decoded(&mut self, lcd: &mut Lcd, s: &mut Settings, decoded: Decoded) {
         let Some(Session::Receive(rx)) = &mut self.session else { return };
         // The character that ends a pause starts the next group, and is not copy.
-        if rx.state == State::Paused {
+        if matches!(rx.state, State::Paused | State::RoundOver) {
             if decoded != Decoded::Space {
                 self.play_group(lcd, s, false);
                 self.draw(lcd, s);
+            }
+            return;
+        }
+        // MANIA: a keyed character is your answer, and `?` plays it again.
+        if rx.drill.kind == Kind::Mania {
+            if let Decoded::Char(c) = decoded
+                && matches!(rx.state, State::Playing | State::Waiting | State::Copying)
+            {
+                if c == b'?' {
+                    self.stop_players();
+                    self.play_group(lcd, s, true);
+                } else {
+                    self.mania_answer(lcd, s, c);
+                }
             }
             return;
         }
@@ -409,6 +494,9 @@ impl Ui {
         let Some(Session::Receive(rx)) = &mut self.session else { return };
         rx.deadline = None;
         if rx.state == State::Between {
+            if rx.drill.kind == Kind::Mania {
+                return self.mania_next(lcd, s);
+            }
             return self.play_group(lcd, s, false);
         }
         if !matches!(rx.state, State::Waiting | State::Copying) {
@@ -422,7 +510,7 @@ impl Ui {
             self.say = Some(rx.word);
         }
         if ninja && rx.state == State::Waiting && rx.copy.as_str().trim().is_empty() {
-            push_scrolling(&mut rx.rows, Row { sent: rx.group, marks: [Mark::Missed; MAX_GROUP], right: 0, scored: false, hinted: false });
+            push_scrolling(&mut rx.rows, Row { sent: rx.group, marks: [Mark::Missed; MAX_GROUP], right: 0, scored: false, hinted: false, mania: false });
             rx.copy.clear();
             rx.state = State::Between;
             rx.deadline = Some(now_ms.wrapping_add(NEXT_GROUP_MS));
@@ -431,7 +519,7 @@ impl Ui {
             return;
         }
         if rx.state == State::Waiting && rx.copy.as_str().trim().is_empty() {
-            push_scrolling(&mut rx.rows, Row { sent: rx.group, marks: [Mark::Missed; MAX_GROUP], right: 0, scored: false, hinted: false });
+            push_scrolling(&mut rx.rows, Row { sent: rx.group, marks: [Mark::Missed; MAX_GROUP], right: 0, scored: false, hinted: false, mania: false });
             if rx.silent.is_some() {
                 rx.pause();
                 self.draw(lcd, s);
@@ -462,7 +550,7 @@ impl Ui {
             rx.session_total += scored.len as u16;
         }
         let level_up = score.level_up || missed.is_some_and(|missed| missed.level_up);
-        push_scrolling(&mut rx.rows, Row { sent: rx.group, marks: score.marks, right: score.right, scored: true, hinted: false });
+        push_scrolling(&mut rx.rows, Row { sent: rx.group, marks: score.marks, right: score.right, scored: true, hinted: false, mania: false });
         rx.copy.clear();
         rx.state = State::Between;
         rx.deadline = Some(now_ms.wrapping_add(NEXT_GROUP_MS));
@@ -510,7 +598,7 @@ impl Ui {
             rx.session_total += scored.len as u16;
         }
         let sent_char = rx.group.as_str().as_bytes().first().copied().unwrap_or(b' ');
-        push_scrolling(&mut rx.rows, Row { sent: rx.group, marks: score.marks, right: 0, scored: true, hinted: true });
+        push_scrolling(&mut rx.rows, Row { sent: rx.group, marks: score.marks, right: 0, scored: true, hinted: true, mania: false });
         rx.copy.clear();
         rx.state = State::Hint;
         rx.deadline = None;
@@ -527,9 +615,65 @@ impl Ui {
         self.status(lcd, FootLine::format(format_args!("HINT: {}  {}", morse::text(&c), morse::code(c).unwrap_or(""))).as_str());
     }
 
-    /// The dial stepped the Koch level; the caller redraws it.
-    pub(super) fn step_level(&mut self, delta: i8) {
+    /// MANIA: your answer `c`, picked or keyed. Right goes on to the next character; wrong shows
+    /// and plays what it was.
+    fn mania_answer(&mut self, lcd: &mut Lcd, s: &mut Settings, c: u8) {
+        self.stop_players();
+        let seed = self.next_seed();
         let Some(Session::Receive(rx)) = &mut self.session else { return };
+        let right = rx.mania.answered(c, &mut self.letters);
+        self.history.copied(right as u8, 1);
+        rx.session_right += right as u16;
+        rx.session_total += 1;
+        let mut marks = [Mark::Missed; MAX_GROUP];
+        marks[0] = if right { Mark::Right } else { Mark::Wrong(c) };
+        push_scrolling(&mut rx.rows, Row { sent: rx.group, marks, right: right as u8, scored: true, hinted: false, mania: true });
+        rx.copy.clear();
+        rx.deadline = None;
+        if right {
+            self.draw_receive_rows(lcd);
+            return self.mania_next(lcd, s);
+        }
+        rx.state = State::Hint;
+        let (wpm, effective) = s.receive_speed(s.wpm);
+        let text = Text::<MAX_TEXT>::format(format_args!("{}", rx.group.as_str()));
+        let keying = Keying { wpm, effective, fist: 0 };
+        self.play = Some(Play { text, keying, seed, delay_ms: GROUP_DELAY_MS, pitch_hz: s.tone_hz, transmit: false });
+        self.draw_receive_keys(lcd);
+        self.draw_receive_info(lcd);
+        self.draw_receive_rows(lcd);
+        self.draw_receive_now(lcd);
+    }
+
+    /// MANIA: the next character, or the round's result once it has `ROUND` answers.
+    fn mania_next(&mut self, lcd: &mut Lcd, s: &mut Settings) {
+        let Some(Session::Receive(rx)) = &mut self.session else { return };
+        if !rx.mania.round_over() {
+            return self.play_group(lcd, s, false);
+        }
+        let result = rx.mania.finish_round();
+        s.mania_level = rx.mania.level();
+        rx.result = Some(result);
+        rx.state = State::RoundOver;
+        rx.deadline = None;
+        let line = match (result.stars, result.unlocked) {
+            (0, _) => FootLine::format(format_args!("{}/{} RIGHT: 16 PASSES, TRY AGAIN", result.right, ROUND)),
+            (_, true) => FootLine::format(format_args!("PASSED! LEVEL {} ADDS {}", rx.mania.level(), NewChars(rx.mania.new_chars()))),
+            (_, false) => FootLine::format(format_args!("PASSED THE LAST LEVEL: {}/{}", result.right, ROUND)),
+        };
+        self.draw(lcd, s);
+        self.status(lcd, line.as_str());
+    }
+
+    /// The dial stepped the Koch level; the caller redraws it.
+    pub(super) fn step_level(&mut self, s: &mut Settings, delta: i8) {
+        let Some(Session::Receive(rx)) = &mut self.session else { return };
+        if rx.drill.kind == Kind::Mania {
+            rx.mania.set_level((rx.mania.level() as i32 + delta as i32).clamp(0, u8::MAX as i32) as u8);
+            s.mania_level = rx.mania.level();
+            rx.result = None;
+            return;
+        }
         rx.drill.set_level((rx.drill.level as i32 + delta as i32).clamp(0, u8::MAX as i32) as u8);
         self.letters.level = rx.drill.level;
         self.koch_window = (rx.drill.level, rx.drill.window());
@@ -537,7 +681,19 @@ impl Ui {
 
     pub(super) fn receive_act(&mut self, lcd: &mut Lcd, s: &mut Settings, action: Action) {
         let Some(Session::Receive(rx)) = &mut self.session else { return };
+        let mania = rx.drill.kind == Kind::Mania;
         match action {
+            Action::Soft(k) if mania && matches!(rx.state, State::Playing | State::Waiting | State::Copying) => {
+                let c = rx.mania.choices()[k as usize % CHOICES];
+                if c != 0 {
+                    self.mania_answer(lcd, s, c);
+                }
+            }
+            Action::Soft(2) if mania && rx.state == State::RoundOver => {
+                rx.result = None;
+                self.play_group(lcd, s, false);
+                self.draw(lcd, s);
+            }
             Action::Soft(0) if rx.drill.kind == Kind::Ninja => self.open_settings_at(lcd, s, Section::Drills),
             Action::Soft(0) => self.open_settings_at(lcd, s, Section::Receive),
             Action::Soft(1) if rx.drill.kind == Kind::Chars => {
@@ -634,6 +790,32 @@ fn draw_hinted(lcd: &mut Lcd, t: &Theme, y: i32, sent: impl Iterator<Item = u8> 
     }
     let score = Text::<12>::format(format_args!("HINT 0/{}", sent.count()));
     tiny(lcd, MAIN - 6 - score.len() as i32 * TINY_W, y + 3, score.as_str(), t.muted, t.bg);
+}
+
+/// A MANIA row: what was sent, your pick marked against it, then the code of what was sent, in
+/// the warning color when you picked wrong.
+fn draw_mania_row(lcd: &mut Lcd, t: &Theme, y: i32, row: &Row) {
+    draw_marked(lcd, t, y, COPY_X, row.sent.as_str().bytes(), &row.marks, row.right);
+    let sent = row.sent.as_str().as_bytes().first().copied().unwrap_or(b' ');
+    let color = if row.right > 0 { t.muted } else { WARN };
+    let mut x = COPY_X + 3 * CHAR_W;
+    for d in morse::code(sent).unwrap_or("").bytes() {
+        x += draw_char(lcd, &SMALL, x, y, d, color, t.bg);
+    }
+}
+
+/// A MANIA choice as its soft key shows it; 0 is an unused key.
+fn choice_label(c: &u8) -> &str {
+    if *c == 0 { "" } else { morse::text(c) }
+}
+
+/// Characters written as text, prosigns as `<AR>`.
+struct NewChars(&'static [u8]);
+
+impl core::fmt::Display for NewChars {
+    fn fmt(&self, f: &mut core::fmt::Formatter) -> core::fmt::Result {
+        self.0.iter().enumerate().try_for_each(|(i, c)| if i > 0 { write!(f, " {}", morse::text(c)) } else { f.write_str(morse::text(c)) })
+    }
 }
 
 fn draw_sent(lcd: &mut Lcd, t: &Theme, y: i32, sent: impl Iterator<Item = u8>) {
