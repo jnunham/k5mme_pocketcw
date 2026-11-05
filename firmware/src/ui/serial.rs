@@ -41,6 +41,7 @@ impl Ui {
             Screen::Letters => "LETTERS",
             Screen::Progress => "PROGRESS",
             Screen::Radio => "RADIO",
+            Screen::Game => "GAME",
         };
         let panel = match self.system.panel {
             Panel::Ips => "IPS",
