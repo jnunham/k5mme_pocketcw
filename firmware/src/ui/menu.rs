@@ -53,7 +53,7 @@ const TOP: [Row; 7] = [
     row("RESUME", "PICK UP WHERE YOU LEFT OFF", "", Item::Resume),
     row("RECEIVE", "KOCH  CHARS  MANIA  WORDS AND MORE", "", Item::List(List::Receive)),
     row("ON AIR", "POTA  SOTA  HUNT  CHEW  QUIZ", "", Item::List(List::OnAir)),
-    row("GAMES", "LADDER  INVADERS  SIMON  WORDLE  FIST", "", Item::List(List::Games)),
+    row("GAMES", "DASH  LADDER  INVADERS  SIMON  MORE", "", Item::List(List::Games)),
     row("STATS", "TIMING, LETTER ACCURACY, PROGRESS", "", Item::List(List::Stats)),
     row("SETTINGS", "KEYER, SOUND, MEMORIES, CALL, THEME", "", Item::Open(Screen::Settings)),
     row("SYSTEM", "VERSION  HARDWARE CHECKS  BATTERY", "", Item::Open(Screen::System)),
@@ -79,7 +79,8 @@ const ON_AIR: [Row; 6] = [
     row("RADIO", "DECODE THE BOARD OR MIDI IN", "", Item::Open(Screen::Radio)),
 ];
 
-const GAMES: [Row; 5] = [
+const GAMES: [Row; 6] = [
+    row("DASH", "A SIDE-SCROLLER: KEY LETTERS TO JUMP", "", Item::Practice(Practice::Game(Game::Dash))),
     row("LADDER", "CALLS SPEED UP AS YOU COPY THEM", "AFTER RUFZXP  DL4MM, IV3XYM", Item::Practice(Practice::Game(Game::Ladder))),
     row("INVADERS", "KEY THE FALLING LETTERS AWAY", "", Item::Practice(Practice::Game(Game::Invaders))),
     row("SIMON", "KEY BACK A SEQUENCE THAT GROWS", "", Item::Practice(Practice::Game(Game::Simon))),

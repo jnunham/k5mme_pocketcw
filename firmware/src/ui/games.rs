@@ -1,9 +1,10 @@
-//! GAMES: LADDER, INVADERS, SIMON, WORDLE and FIST. The rules live in `pocketcw_logic::games`;
+//! GAMES: DASH, LADDER, INVADERS, SIMON, WORDLE and FIST. The rules live in `pocketcw_logic::games`;
 //! this draws them and feeds them your keying. Each game keeps its best score in the settings.
 
 use core::fmt::Write;
 
 use pocketcw_logic::{
+    dash::{self, Dash},
     decoder::{Decoded, copy_end},
     drill::{MAX_COPY, MAX_GROUP, Mark, Score},
     games::{
@@ -17,6 +18,7 @@ use pocketcw_logic::{
 };
 
 use super::footer::{FootLine, INPUT_COLS, INPUT_Y};
+use super::dash::{SCENE_TOP, View};
 use super::{Play, Screen, Session, Ui, draw_char, push_scrolling, settings::Section};
 use crate::fonts::{SMALL, TINY};
 use crate::gfx::{CHAR_W, TINY_W, ink, rect, text_cols, tiny};
@@ -39,6 +41,8 @@ const PLAY_DELAY_MS: u32 = 400;
 const FIELD_TOP: i32 = 44;
 const GROUND_Y: i32 = 198;
 const TICK_MS: u32 = 80;
+/// DASH frames.
+const DASH_TICK_MS: u32 = 33;
 const COL_W: i32 = MAIN / INVADER_COLS as i32;
 /// WORDLE tiles.
 const TILE_W: i32 = 22;
@@ -65,6 +69,7 @@ enum Engine {
     Simon(Simon),
     Wordle(Wordle),
     Fist(Fist),
+    Dash(Dash, View),
 }
 
 #[derive(Clone, Copy)]
@@ -90,6 +95,8 @@ pub(super) struct Arcade {
     streak: u16,
     /// The game that just ended set a new best.
     new_best: bool,
+    /// DASH hides the character and sends it.
+    hear: bool,
 }
 
 impl Arcade {
@@ -102,6 +109,7 @@ impl Arcade {
             State::Playing => "LISTEN",
             State::Waiting => "YOUR TURN",
             State::Copying => "KEYING",
+            State::Running if matches!(self.engine, Engine::Dash(..)) => "RUN!",
             State::Between | State::Running => "",
             State::Paused => "PAUSED",
             State::Over => "GAME OVER",
@@ -122,8 +130,20 @@ impl Arcade {
     }
 }
 
-fn engine(game: Game, s: &Settings, pool: &'static [u8], seed: u32) -> Engine {
+fn engine(game: Game, s: &Settings, pool: &'static [u8], seed: u32, t: &Theme, hear: bool) -> Engine {
     match game {
+        Game::Dash => {
+            // Only what the bubbles can draw: letters and digits.
+            let mut chars = [0u8; 44];
+            let mut n = 0;
+            for &c in pool.iter().filter(|c| c.is_ascii_alphanumeric()).take(chars.len()) {
+                chars[n] = c;
+                n += 1;
+            }
+            let chars: &[u8] = if n == 0 { b"ETANIM" } else { &chars[..n] };
+            let mode = if hear { dash::Mode::Hear } else { dash::Mode::See };
+            Engine::Dash(Dash::new(chars, mode, seed), View::new(t))
+        }
         Game::Ladder => Engine::Ladder(Ladder::new(s.receive_speed(s.wpm).0, seed)),
         Game::Invaders => Engine::Invaders(Invaders::new(pool, seed)),
         Game::Simon => Engine::Simon(Simon::new(pool, seed)),
@@ -138,11 +158,15 @@ impl Ui {
     }
 
     pub(super) fn open_game(&mut self, lcd: &mut Lcd, s: &mut Settings, game: Game) {
+        self.open_game_with(lcd, s, game, false);
+    }
+
+    fn open_game_with(&mut self, lcd: &mut Lcd, s: &mut Settings, game: Game, hear: bool) {
         let seed = self.next_seed();
         let pool = self.pool(s);
         let arcade = Arcade {
             game,
-            engine: engine(game, s, pool, seed),
+            engine: engine(game, s, pool, seed, &self.theme, hear),
             state: State::Between,
             deadline: None,
             copy: Text::new(),
@@ -151,6 +175,7 @@ impl Ui {
             drawn: [None; INVADER_SLOTS],
             streak: 0,
             new_best: false,
+            hear,
         };
         self.session = Some(Session::Game(arcade));
         self.open(lcd, s, Screen::Game);
@@ -172,7 +197,8 @@ impl Ui {
         let Some(Session::Game(a)) = &self.session else { return };
         let game = a.game;
         let streak = a.streak;
-        self.open_game(lcd, s, game);
+        let hear = a.hear;
+        self.open_game_with(lcd, s, game, hear);
         if let Some(Session::Game(a)) = &mut self.session {
             a.streak = streak;
         }
@@ -205,7 +231,7 @@ impl Ui {
                 }
                 None
             }
-            Engine::Invaders(_) => {
+            Engine::Invaders(_) | Engine::Dash(..) => {
                 a.state = State::Running;
                 a.last_ms = now;
                 a.deadline = Some(now.wrapping_add(TICK_MS));
@@ -229,7 +255,7 @@ impl Ui {
         self.header(lcd, s, a.game.name(), &[]);
         self.draw_game_keys(lcd);
         let t = &self.theme;
-        if !matches!(a.engine, Engine::Invaders(_)) {
+        if !matches!(a.engine, Engine::Invaders(_) | Engine::Dash(..)) {
             rect(lcd, 0, RULE_Y, MAIN, 1, t.rule());
         }
         self.draw_game_info(lcd, s);
@@ -240,6 +266,8 @@ impl Ui {
     fn draw_game_keys(&self, lcd: &mut Lcd) {
         let Some(Session::Game(a)) = &self.session else { return };
         let again = match (&a.engine, a.state) {
+            (Engine::Dash(..), State::Paused | State::Over) => if a.hear { "HEAR" } else { "SEE" },
+            (Engine::Dash(..), State::Running) if a.hear => "AGN",
             (Engine::Ladder(_), State::Playing | State::Waiting | State::Copying) => "AGN",
             (Engine::Simon(_), State::Waiting) => "AGN",
             _ => "",
@@ -252,12 +280,21 @@ impl Ui {
     fn draw_game_info(&self, lcd: &mut Lcd, s: &Settings) {
         let Some(Session::Game(a)) = &self.session else { return };
         let t = &self.theme;
-        let bottom = if matches!(a.engine, Engine::Invaders(_)) { FIELD_TOP } else { RULE_Y };
+        let bottom = match a.engine {
+            Engine::Invaders(_) => FIELD_TOP,
+            Engine::Dash(..) => SCENE_TOP,
+            _ => RULE_Y,
+        };
         rect(lcd, 0, INFO_Y, MAIN, bottom - INFO_Y, t.bg);
         let best = s.bests[a.game.index()];
         let mut info = Text::<40>::new();
         let mut sub = Text::<40>::new();
         match &a.engine {
+            Engine::Dash(d, _) => {
+                let _ = write!(info, "SCORE {} LV {} LIVES ", d.score, d.level());
+                (0..dash::LIVES).for_each(|i| _ = info.push(if i < d.lives { b'*' } else { b'-' }));
+                let _ = write!(info, " {}", if a.hear { "HEAR" } else { "SEE" });
+            }
             Engine::Ladder(l) => {
                 let _ = write!(info, "CALL {}/{}  {} WPM  {} PTS", l.calls.min(LADDER_CALLS - 1) + 1, LADDER_CALLS, l.wpm, l.points);
                 let _ = write!(sub, "BEST {best} PTS  RIGHT SPEEDS IT UP");
@@ -313,7 +350,14 @@ impl Ui {
     fn draw_game_body(&mut self, lcd: &mut Lcd, clear: bool) {
         let Some(Session::Game(a)) = &mut self.session else { return };
         let t = &self.theme;
-        match &a.engine {
+        match &mut a.engine {
+            Engine::Dash(d, view) => {
+                if clear {
+                    // The theme may have changed since.
+                    *view = View::new(t);
+                }
+                view.frame(lcd, d, clear);
+            }
             Engine::Invaders(g) => {
                 if clear {
                     rect(lcd, 0, FIELD_TOP, MAIN, GROUND_Y - FIELD_TOP, t.bg);
@@ -386,6 +430,9 @@ impl Ui {
         let foot = match (a.state, &a.engine) {
             (State::Paused, _) => "PAUSED: TOUCH THE KEY OR PRESS GO",
             (State::Over, _) => "GO OR TOUCH THE KEY: PLAY AGAIN",
+            (State::Over, Engine::Dash(..)) => "GO: RUN AGAIN  F2: SEE OR HEAR",
+            (_, Engine::Dash(..)) if a.hear => "LISTEN, KEY IT TO JUMP  F2: AGAIN",
+            (_, Engine::Dash(..)) => "KEY THE LETTER TO JUMP IT",
             (_, Engine::Ladder(_)) => "COPY THE CALL AND KEY IT BACK",
             (_, Engine::Invaders(_)) => "KEY A CHARACTER TO SHOOT IT",
             (_, Engine::Simon(_)) => "KEY BACK THE WHOLE SEQUENCE",
@@ -443,8 +490,11 @@ impl Ui {
             }
             State::Running => {
                 let Decoded::Char(c) = decoded else { return };
-                let Engine::Invaders(g) = &mut a.engine else { return };
-                let hit = g.hit(c).is_some();
+                let hit = match &mut a.engine {
+                    Engine::Invaders(g) => g.hit(c).is_some(),
+                    Engine::Dash(d, _) => d.key(c) == dash::Key::Cleared,
+                    _ => return,
+                };
                 let _ = decoded.write_to(&mut a.copy);
                 if a.copy.len() > INPUT_COLS - 4 {
                     a.copy.clear();
@@ -470,10 +520,47 @@ impl Ui {
         a.deadline = None;
         match a.state {
             State::Between => self.game_turn(lcd, s),
+            State::Running if matches!(a.engine, Engine::Dash(..)) => self.dash_tick(lcd, s, now_ms),
             State::Running => self.invaders_tick(lcd, s, now_ms),
             State::Waiting | State::Copying => self.game_copied(lcd, s, now_ms),
             _ => {}
         }
+    }
+
+    fn dash_tick(&mut self, lcd: &mut Lcd, s: &mut Settings, now_ms: u32) {
+        let seed = self.next_seed();
+        let Some(Session::Game(a)) = &mut self.session else { return };
+        let Engine::Dash(d, view) = &mut a.engine else { return };
+        let events = d.step(now_ms.wrapping_sub(a.last_ms).min(200));
+        a.last_ms = now_ms;
+        view.frame(lcd, d, false);
+        let (over, lives) = (d.over(), d.lives);
+        if !over {
+            a.deadline = Some(now_ms.wrapping_add(DASH_TICK_MS));
+        }
+        // HEAR: the new obstacle's character, sent as it comes on screen.
+        if a.hear
+            && let Some(c) = events.spawned
+        {
+            self.send_char(s, c, seed);
+        }
+        if events.crashed {
+            self.draw_game_info(lcd, s);
+            if !over {
+                self.status(lcd, FootLine::format(format_args!("OUCH!  LIVES LEFT {lives}")).as_str());
+            }
+        }
+        if over {
+            self.game_over(lcd, s);
+        }
+    }
+
+    /// One character at the receive speed, as DASH's HEAR sends it.
+    fn send_char(&mut self, s: &Settings, c: u8, seed: u32) {
+        let (wpm, effective) = s.receive_speed(s.wpm);
+        let mut text = Text::<MAX_TEXT>::new();
+        let _ = text.push(c);
+        self.play = Some(Play { text, keying: Keying { wpm, effective, fist: 0 }, seed, delay_ms: 0, pitch_hz: s.tone_hz, transmit: false });
     }
 
     fn invaders_tick(&mut self, lcd: &mut Lcd, s: &mut Settings, now_ms: u32) {
@@ -553,7 +640,7 @@ impl Ui {
                     return;
                 }
             }
-            Engine::Invaders(_) => return,
+            Engine::Invaders(_) | Engine::Dash(..) => return,
         }
         if over {
             return self.game_over(lcd, s);
@@ -575,6 +662,7 @@ impl Ui {
         let (score, line) = match &a.engine {
             Engine::Ladder(l) => (l.points, FootLine::format(format_args!("{} PTS, {} OF {} RIGHT", l.points, l.right, LADDER_CALLS))),
             Engine::Invaders(g) => (g.score, FootLine::format(format_args!("THEY LANDED: {} PTS, LEVEL {}", g.score, g.level()))),
+            Engine::Dash(d, _) => (d.score, FootLine::format(format_args!("CRASHED OUT: {} PTS, {} JUMPS", d.score, d.cleared))),
             Engine::Simon(simon) => {
                 let longest = if simon.won() { simon.len() } else { simon.len() - 1 };
                 (longest as u16, FootLine::format(format_args!("YOU KEYED BACK {longest} IN A ROW")))
@@ -616,6 +704,20 @@ impl Ui {
         match action {
             Action::Soft(0) => self.open_settings_at(lcd, s, Section::Receive),
             Action::Soft(1) => match &mut a.engine {
+                Engine::Dash(d, _) if matches!(a.state, State::Paused | State::Over) => {
+                    a.hear = !a.hear;
+                    d.mode = if a.hear { dash::Mode::Hear } else { dash::Mode::See };
+                    self.draw_game_keys(lcd);
+                    self.draw_game_info(lcd, s);
+                    self.draw_game_now(lcd);
+                }
+                Engine::Dash(d, _) if a.hear && a.state == State::Running => {
+                    if let Some(c) = d.next_char() {
+                        let seed = self.next_seed();
+                        self.stop_players();
+                        self.send_char(s, c, seed);
+                    }
+                }
                 Engine::Ladder(l) if matches!(a.state, State::Playing | State::Waiting | State::Copying) => {
                     l.repeated = true;
                     let text = Text::<MAX_TEXT>::format(format_args!("{}", l.call()));

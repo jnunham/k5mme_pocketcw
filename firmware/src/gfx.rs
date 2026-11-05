@@ -123,7 +123,7 @@ pub const fn blocks_width(len: usize, px: i32, gap: i32) -> i32 {
 }
 
 /// One row per byte, top first; bit 4 is the left column. Unknown characters are solid.
-fn glyph(c: char) -> [u8; 7] {
+pub(crate) fn glyph(c: char) -> [u8; 7] {
     match c.to_ascii_uppercase() {
         'A' => [14, 17, 17, 31, 17, 17, 17],
         'B' => [30, 17, 17, 30, 17, 17, 30],
@@ -164,6 +164,7 @@ fn glyph(c: char) -> [u8; 7] {
         '/' => [1, 1, 2, 4, 8, 16, 16],
         '-' => [0, 0, 0, 31, 0, 0, 0],
         '.' => [0, 0, 0, 0, 0, 12, 12],
+        '?' => [14, 17, 1, 2, 4, 0, 4],
         ' ' => [0; 7],
         _ => [31; 7],
     }

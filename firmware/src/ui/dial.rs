@@ -32,6 +32,7 @@ impl Ui {
             // LADDER sets its own speed, and INVADERS, WORDLE and FIST are about your sending.
             (Screen::Game, Some(Session::Game(a))) => match a.game() {
                 Game::Simon => &LISTEN,
+                Game::Dash => &RECEIVE_FIRST,
                 Game::Ladder => &VOLUME,
                 Game::Invaders | Game::Wordle | Game::Fist => &SEND_FIRST,
             },

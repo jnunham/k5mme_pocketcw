@@ -9,6 +9,7 @@ pub mod config;
 pub mod decode_lines;
 pub mod decoder;
 pub mod dial;
+pub mod dash;
 pub mod drill;
 pub mod games;
 pub mod hand;

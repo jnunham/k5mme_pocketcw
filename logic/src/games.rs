@@ -23,10 +23,12 @@ pub enum Game {
     Simon,
     Wordle,
     Fist,
+    /// The side-scroller, in `dash`.
+    Dash,
 }
 
-/// In menu order; a game's best score is stored at its index here.
-pub const GAMES: [Game; 5] = [Game::Ladder, Game::Invaders, Game::Simon, Game::Wordle, Game::Fist];
+/// A game's best score is stored at its index here; new games go at the end.
+pub const GAMES: [Game; 6] = [Game::Ladder, Game::Invaders, Game::Simon, Game::Wordle, Game::Fist, Game::Dash];
 
 impl Game {
     pub fn name(self) -> &'static str {
@@ -36,6 +38,7 @@ impl Game {
             Game::Simon => "SIMON",
             Game::Wordle => "WORDLE",
             Game::Fist => "FIST",
+            Game::Dash => "DASH",
         }
     }
 
@@ -46,7 +49,7 @@ impl Game {
     /// What its best score counts, for the menu and the result line.
     pub fn best_unit(self) -> &'static str {
         match self {
-            Game::Ladder | Game::Invaders => "PTS",
+            Game::Ladder | Game::Invaders | Game::Dash => "PTS",
             Game::Simon => "LONG",
             Game::Wordle => "IN A ROW",
             Game::Fist => "%",

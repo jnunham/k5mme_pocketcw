@@ -64,7 +64,7 @@ pub enum Practice {
     Game(Game),
 }
 
-const PRACTICES: [Practice; 17] = [
+const PRACTICES: [Practice; 18] = [
     Practice::Drill(drill::Kind::Koch),
     Practice::Drill(drill::Kind::Words),
     Practice::Drill(drill::Kind::Calls),
@@ -82,6 +82,7 @@ const PRACTICES: [Practice; 17] = [
     Practice::Game(Game::Simon),
     Practice::Game(Game::Wordle),
     Practice::Game(Game::Fist),
+    Practice::Game(Game::Dash),
 ];
 
 impl Practice {
@@ -898,7 +899,7 @@ mod tests {
 
     #[test]
     fn game_bests_round_trip_and_read_missing_as_zero() {
-        let s = Settings { bests: [1234, 560, 9, 3, 87], last_practice: Some(Practice::Game(Game::Wordle)), ..Settings::default() };
+        let s = Settings { bests: [1234, 560, 9, 3, 87, 4321], last_practice: Some(Practice::Game(Game::Wordle)), ..Settings::default() };
         assert_eq!(Settings::decode(&s.encode(0)), Some(s));
         let mut before = [0xFF; 64];
         let older = &mut before[..BESTS_AT + record::OVERHEAD];

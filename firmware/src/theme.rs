@@ -347,6 +347,11 @@ impl Theme {
         }
     }
 
+    /// The top of a sun: the first stripe of a palette with a sunset of them, or a light echo.
+    pub fn sun(&self) -> Rgb565 {
+        if !self.flag && self.stripe_count > 2 { self.stripes[0] } else { mix(self.echo, self.fg, 30) }
+    }
+
     /// Tenths of a pixel per block row that block letters lean.
     pub fn slant(&self) -> i32 {
         if matches!(self.style, Style::Block | Style::Term) { 0 } else { 6 }

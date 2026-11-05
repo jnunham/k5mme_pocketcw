@@ -2,6 +2,8 @@
 //! progress, the menu, settings and system. Each event redraws only what it changed; a full
 //! redraw takes about 70 ms.
 
+mod dash;
+mod dash_art;
 mod dial;
 mod exchange;
 mod footer;
