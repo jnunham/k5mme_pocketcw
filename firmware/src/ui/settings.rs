@@ -88,7 +88,7 @@ const ROWS: [(&str, Row, &str); 42] = [
     ("AFTER SEND", Row::AfterSend, "CLOSE OR KEEP THE MEM ROW OPEN"),
     ("CALLSIGN", Row::Section(Section::Callsign), ""),
     ("CALL", Row::Call, "FOR THE STATIONS AND THE BOOT SCREEN"),
-    ("BKG #", Row::Club, "YOUR BKG.CLUB NUMBER, ON THE BOOT SCREEN"),
+    ("BKG #", Row::Club, "BKG #"),
     ("DEVICE", Row::Section(Section::Device), ""),
     ("USB OUT", Row::Value(Field::UsbOut), "WHAT THE USB PORT SENDS A COMPUTER"),
     ("DECODER BOARD", Row::Value(Field::DecoderBoard), "THE RADIO DECODER OF THE PRO MODEL"),
