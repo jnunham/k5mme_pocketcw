@@ -87,6 +87,8 @@ struct Contact {
     closed_ms: u16,
     /// May not key until it opens.
     held: bool,
+    /// The last sample differed from `closed`; a second in a row makes the change.
+    pending: bool,
 }
 
 impl Contact {
@@ -94,17 +96,22 @@ impl Contact {
     fn tick(&mut self, raw: bool, stuck_ms: u16) {
         if self.hold_ms > 0 {
             self.hold_ms -= 1;
-        } else if raw != self.closed {
+        } else if raw != self.closed && self.pending {
             self.closed = raw;
             self.hold_ms = DEBOUNCE_MS - 1;
+            self.pending = false;
+        } else {
+            self.pending = raw != self.closed;
         }
         self.closed_ms = if self.closed { (self.closed_ms + 1).min(stuck_ms) } else { 0 };
         self.held = (self.held || self.closed_ms == stuck_ms) && self.closed;
     }
 }
 
-/// The key jack's contacts, stepped once per millisecond before anything reads them. The first
-/// change of a contact counts at once; changes in the next DEBOUNCE_MS are bounce.
+/// The key jack's contacts, stepped once per millisecond before anything reads them. A change
+/// counts on its second sample in a row, so a one-sample spike, such as noise from the display
+/// bus while a game draws every frame, keys nothing; changes in the DEBOUNCE_MS after a change
+/// are bounce.
 ///
 /// A contact closed at power on, or for its stuck time, stops keying until it opens. A mono plug
 /// shorts the ring, so the ring's stuck time is short and a mono plug keys only on the tip
@@ -117,7 +124,7 @@ pub struct Jack {
 impl Jack {
     /// `raw` is the jack at power on: a contact already closed may not key until it opens.
     pub fn new(raw: Contacts) -> Jack {
-        let contact = |closed| Contact { closed, hold_ms: 0, closed_ms: 0, held: closed };
+        let contact = |closed| Contact { closed, hold_ms: 0, closed_ms: 0, held: closed, pending: false };
         Jack { tip: contact(raw.tip), ring: contact(raw.ring) }
     }
 
@@ -388,7 +395,26 @@ mod tests {
         let mut jack = Jack::new(NONE);
         let mut k = Keyer::new(Mode::Straight, false, 20);
         let runs = run_jack(&mut jack, &mut k, &[(TIP, 1), (NONE, 1), (TIP, 1), (NONE, 1), (TIP, 100), (NONE, 20)]);
-        assert_eq!(runs, [(true, 104), (false, 20)]);
+        // It closes on its second sample in a row, and opens on its second open one.
+        assert_eq!(runs, [(false, 5), (true, 100), (false, 19)]);
+    }
+
+    #[test]
+    fn one_sample_spikes_key_nothing() {
+        // Noise that reads a contact closed for single samples, as the display bus can make
+        // while a game draws every frame, with no key plugged in.
+        for mode in [Mode::Straight, Mode::IambicA, Mode::IambicB] {
+            let mut jack = Jack::new(NONE);
+            let mut k = Keyer::new(mode, false, 20);
+            let mut steps = Vec::new();
+            for i in 0..500u32 {
+                let spike = [TIP, RING, BOTH][i as usize % 3];
+                steps.extend([(spike, 1), (NONE, 1 + i % 4)]);
+            }
+            let runs = run_jack(&mut jack, &mut k, &steps);
+            assert_eq!(runs.len(), 1, "{mode:?}: {runs:?}");
+            assert!(!runs[0].0);
+        }
     }
 
     #[test]
@@ -397,7 +423,7 @@ mod tests {
         let mut jack = Jack::new(RING);
         let mut k = Keyer::new(Mode::Straight, false, 20);
         let runs = run_jack(&mut jack, &mut k, &[(RING, 3000), (BOTH, 60), (RING, 60)]);
-        assert_eq!(runs, [(false, 3000), (true, 60), (false, 60)]);
+        assert_eq!(runs, [(false, 3001), (true, 60), (false, 59)]);
         assert!(jack.closed().ring, "the stuck warning still sees the ring");
     }
 
@@ -406,7 +432,7 @@ mod tests {
         let mut jack = Jack::new(TIP);
         let mut k = Keyer::new(Mode::IambicB, false, 20);
         let runs = run_jack(&mut jack, &mut k, &[(TIP, 500), (NONE, 20), (TIP, 60)]);
-        assert_eq!(runs, [(false, 520), (true, 60)]);
+        assert_eq!(runs, [(false, 521), (true, 59)]);
     }
 
     #[test]
@@ -415,7 +441,7 @@ mod tests {
         let mut k = Keyer::new(Mode::Straight, false, 20);
         let stuck = RING_STUCK_MS as u32;
         let runs = run_jack(&mut jack, &mut k, &[(RING, stuck + 500), (BOTH, 60), (RING, 60)]);
-        assert_eq!(runs, [(true, stuck - 1), (false, 501), (true, 60), (false, 60)]);
+        assert_eq!(runs, [(false, 1), (true, stuck - 1), (false, 501), (true, 60), (false, 59)]);
         assert!(jack.closed().ring, "the stuck warning still sees the ring");
     }
 
@@ -425,7 +451,7 @@ mod tests {
         let mut k = Keyer::new(Mode::Straight, false, 20);
         let stuck = RING_STUCK_MS as u32;
         let runs = run_jack(&mut jack, &mut k, &[(RING, stuck), (NONE, 20), (RING, 60)]);
-        assert_eq!(runs, [(true, stuck - 1), (false, 21), (true, 60)]);
+        assert_eq!(runs, [(false, 1), (true, stuck - 1), (false, 21), (true, 59)]);
     }
 
     #[test]
@@ -434,7 +460,7 @@ mod tests {
         let mut k = Keyer::new(Mode::Straight, false, 20);
         let stuck = TIP_STUCK_MS as u32;
         let runs = run_jack(&mut jack, &mut k, &[(TIP, stuck + 500), (NONE, 20), (TIP, 60)]);
-        assert_eq!(runs, [(true, stuck - 1), (false, 521), (true, 60)]);
+        assert_eq!(runs, [(false, 1), (true, stuck - 1), (false, 521), (true, 59)]);
     }
 
     #[test]
